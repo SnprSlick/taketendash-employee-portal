@@ -76,5 +76,5 @@ export function getUser(): AuthUser | null {
 }
 
 export function isAdmin(user: AuthUser | null): boolean {
-  return !!user && ['ADMIN', 'CORPORATE'].includes(user.role);
+  return !!user && ['ADMIN', 'ADMINISTRATOR', 'CORPORATE'].includes(user.role);
 }
