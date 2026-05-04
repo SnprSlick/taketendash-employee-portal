@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft, Download, FileText, FileImage, File, Search } from 'lucide-react';
+import { Download, FileText, FileImage, File, Search, Trash2 } from 'lucide-react';
+import NavBar from '../components/NavBar';
 import { useAuth } from '../components/useAuth';
-import { apiFetch, downloadUrl, getAuthHeaders } from '../lib/api';
+import { apiFetch, downloadUrl, getAuthHeaders, isAdmin } from '../lib/api';
 
 interface Document {
   id: string;
@@ -32,13 +32,13 @@ function formatBytes(bytes: number) {
 }
 
 export default function DocumentsPage() {
-  const router = useRouter();
   const { user, loading } = useAuth();
   const [docs, setDocs] = useState<Document[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('');
   const [query, setQuery] = useState('');
   const [fetching, setFetching] = useState(true);
+  const admin = user ? isAdmin(user) : false;
 
   useEffect(() => {
     if (!user) return;
@@ -79,14 +79,21 @@ export default function DocumentsPage() {
     URL.revokeObjectURL(a.href);
   }
 
+  async function handleDelete(doc: Document) {
+    if (!confirm(`Delete "${doc.title}"? This cannot be undone.`)) return;
+    try {
+      await apiFetch(`/documents/${doc.id}`, { method: 'DELETE' });
+      fetchDocs(query, activeCategory);
+    } catch { alert('Delete failed'); }
+  }
+
   if (loading) return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">Loading…</div>;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
-      <header className="border-b border-gray-800 bg-gray-900 px-6 py-3 flex items-center gap-4">
-        <button onClick={() => router.push('/')} className="text-gray-400 hover:text-white transition-colors">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
+      <NavBar />
+
+      <div className="border-b border-gray-800 bg-gray-900 px-6 py-3 flex items-center gap-4">
         <h1 className="font-semibold text-white">All Documents</h1>
         <form onSubmit={handleSearch} className="flex-1 max-w-md ml-auto">
           <div className="relative">
@@ -100,32 +107,25 @@ export default function DocumentsPage() {
             />
           </div>
         </form>
-      </header>
+      </div>
 
       <div className="flex">
-        {/* Sidebar */}
         {categories.length > 0 && (
           <aside className="w-48 border-r border-gray-800 bg-gray-900 min-h-screen p-4">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Categories</p>
-            <button
-              onClick={() => handleCategory('')}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-colors ${activeCategory === '' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-            >
+            <button onClick={() => handleCategory('')}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-colors ${activeCategory === '' ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
               All
             </button>
             {categories.map(cat => (
-              <button
-                key={cat}
-                onClick={() => handleCategory(cat)}
-                className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-colors ${activeCategory === cat ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-              >
+              <button key={cat} onClick={() => handleCategory(cat)}
+                className={`w-full text-left px-3 py-2 rounded-lg text-sm mb-1 transition-colors ${activeCategory === cat ? 'bg-red-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}>
                 {cat}
               </button>
             ))}
           </aside>
         )}
 
-        {/* Main */}
         <main className="flex-1 p-6">
           {fetching ? (
             <div className="text-center py-16 text-gray-400">Loading…</div>
@@ -135,29 +135,27 @@ export default function DocumentsPage() {
             <div className="grid gap-3">
               {docs.map(doc => (
                 <div key={doc.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start gap-4 hover:border-gray-600 transition-colors">
-                  <div className="flex-shrink-0 mt-0.5">
-                    <FileIcon mime={doc.mimeType} />
-                  </div>
+                  <div className="flex-shrink-0 mt-0.5"><FileIcon mime={doc.mimeType} /></div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-white">{doc.title}</p>
                     {doc.description && <p className="text-sm text-gray-400 mt-0.5 line-clamp-1">{doc.description}</p>}
                     <div className="flex flex-wrap items-center gap-2 mt-2">
-                      {doc.category && (
-                        <span className="px-2 py-0.5 bg-gray-800 text-gray-300 text-xs rounded-full border border-gray-700">{doc.category}</span>
-                      )}
-                      {doc.tags.map(tag => (
-                        <span key={tag} className="px-2 py-0.5 bg-red-950/40 text-red-300 text-xs rounded-full border border-red-900/50">{tag}</span>
-                      ))}
+                      {doc.category && <span className="px-2 py-0.5 bg-gray-800 text-gray-300 text-xs rounded-full border border-gray-700">{doc.category}</span>}
+                      {doc.tags.map(tag => <span key={tag} className="px-2 py-0.5 bg-red-950/40 text-red-300 text-xs rounded-full border border-red-900/50">{tag}</span>)}
                       <span className="text-xs text-gray-600 ml-auto">{formatBytes(doc.fileSize)}</span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDownload(doc)}
-                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-red-600 border border-gray-700 hover:border-red-600 text-gray-300 hover:text-white text-sm rounded-lg transition-colors"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download
-                  </button>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {admin && (
+                      <button onClick={() => handleDelete(doc)} className="p-2 text-gray-500 hover:text-red-400 hover:bg-red-950/30 rounded-lg transition-colors" title="Delete">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button onClick={() => handleDownload(doc)}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-red-600 border border-gray-700 hover:border-red-600 text-gray-300 hover:text-white text-sm rounded-lg transition-colors">
+                      <Download className="w-4 h-4" /> Download
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
