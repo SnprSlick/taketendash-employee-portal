@@ -1,4 +1,4 @@
-const BASE = process.env.NEXT_PUBLIC_BACKEND_URL || '';
+const BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || '') + '/api/v1';
 
 function getToken(): string | null {
   if (typeof window === 'undefined') return null;
