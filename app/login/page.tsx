@@ -2,7 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { saveAuth } from '../lib/api';
+import { saveAuth, apiFetch } from '../lib/api';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,19 +17,10 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const BASE = process.env.NEXT_PUBLIC_BACKEND_URL || '';
-      const res = await fetch(`${BASE}/auth/login`, {
+      const data = await apiFetch<{ access_token: string; user: Parameters<typeof saveAuth>[1] }>('/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.message || 'Invalid credentials');
-      }
-
-      const data = await res.json();
       saveAuth(data.access_token, data.user);
       router.push('/');
     } catch (err: unknown) {
