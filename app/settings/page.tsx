@@ -8,6 +8,7 @@ import {
 import NavBar from '../components/NavBar';
 import { useAuth } from '../components/useAuth';
 import { apiFetch, apiUpload, isAdmin } from '../lib/api';
+import DataValidationTab from '../components/settings/DataValidationTab';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -528,7 +529,7 @@ function CategoriesTab() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'documents' | 'announcements' | 'categories';
+type Tab = 'documents' | 'announcements' | 'categories' | 'validation';
 
 export default function SettingsPage() {
   const { user, loading } = useAuth();
@@ -557,11 +558,13 @@ export default function SettingsPage() {
           <TabButton active={tab === 'documents'} onClick={() => setTab('documents')}>📄 Documents</TabButton>
           <TabButton active={tab === 'announcements'} onClick={() => setTab('announcements')}>📢 Announcements</TabButton>
           <TabButton active={tab === 'categories'} onClick={() => setTab('categories')}>🗂 Categories</TabButton>
+          <TabButton active={tab === 'validation'} onClick={() => setTab('validation')}>✅ Data Validation</TabButton>
         </div>
 
         {tab === 'documents' && <DocumentsTab />}
         {tab === 'announcements' && <AnnouncementsTab />}
         {tab === 'categories' && <CategoriesTab />}
+        {tab === 'validation' && <DataValidationTab />}
       </main>
     </div>
   );
