@@ -8,6 +8,7 @@ import { useAuth } from '../components/useAuth';
 import NavBar from '../components/NavBar';
 
 const WHOLESALE_ROLES = ['ADMINISTRATOR', 'CORPORATE', 'WHOLESALE'];
+const ADMIN_ROLES = ['ADMINISTRATOR'];
 
 interface PricingMatrix {
   id: string;
@@ -33,6 +34,7 @@ export default function CalculatorPage() {
   const router = useRouter();
 
   const canUseWholesale = user && WHOLESALE_ROLES.includes(user.role);
+  const isAdmin = user && ADMIN_ROLES.includes(user.role);
   const [calcType, setCalcType] = useState<'retail' | 'wholesale'>('retail');
   const [matrices, setMatrices] = useState<PricingMatrix[]>([]);
   const [loadingMatrices, setLoadingMatrices] = useState(true);
@@ -163,6 +165,7 @@ export default function CalculatorPage() {
             <p className="text-6xl font-black text-red-500 leading-none tracking-tight">
               {fmt(sellPrice)}
             </p>
+            {isAdmin && (
             <div className="flex justify-center gap-6 mt-4 text-sm text-gray-400">
               <span>
                 <span className="text-white font-semibold">{marginPct?.toFixed(1)}%</span> margin
@@ -172,11 +175,12 @@ export default function CalculatorPage() {
                 <span className="text-white font-semibold">{fmt(grossProfit!)}</span> GP
               </span>
             </div>
+            )}
           </div>
         )}
 
-        {/* Tier reference toggle */}
-        {selectedMatrix && (
+        {/* Tier reference toggle — admin only */}
+        {isAdmin && selectedMatrix && (
           <div className="mt-5 rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
             <button
               onClick={() => setShowTiers(v => !v)}
