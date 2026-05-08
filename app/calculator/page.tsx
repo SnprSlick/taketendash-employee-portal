@@ -66,7 +66,7 @@ export default function CalculatorPage() {
       <NavBar />
 
       <main className="flex-1 max-w-lg mx-auto w-full px-5 py-10">
-        <h1 className="text-xl font-bold text-white mb-1">Non-Stock Pricing</h1>
+        <h1 className="text-xl font-bold text-white mb-1">Retail Non-Stock Pricing</h1>
         <p className="text-xs text-gray-500 uppercase tracking-widest mb-8">Cost → Sell Price Calculator</p>
 
         {/* Category selector */}
