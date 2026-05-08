@@ -1,6 +1,4 @@
 /** @type {import('next').NextConfig} */
-const nextConfig = {
-  transpilePackages: ['xlsx'],
-};
+const nextConfig = {};
 
 export default nextConfig;

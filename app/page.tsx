@@ -43,23 +43,20 @@ function formatBytes(b: number) {
 }
 
 // ── Spreadsheet viewer ────────────────────────────────────────────────────────
-function SpreadsheetViewer({ arrayBuffer }: { arrayBuffer: ArrayBuffer }) {
+function SpreadsheetViewer({ docId, headers: authHeaders }: { docId: string; headers: Record<string, string> }) {
   const [sheets, setSheets] = useState<{ name: string; rows: string[][] }[]>([]);
   const [activeSheet, setActiveSheet] = useState(0);
+  const [error, setError] = useState(false);
+  const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL ?? '';
 
   useEffect(() => {
-    (async () => {
-      const XLSX = await import('xlsx');
-      const wb = XLSX.read(arrayBuffer, { type: 'array' });
-      const parsed = wb.SheetNames.map(name => {
-        const ws = wb.Sheets[name];
-        const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as string[][];
-        return { name, rows };
-      });
-      setSheets(parsed);
-    })();
-  }, [arrayBuffer]);
+    fetch(`${backendUrl}/api/v1/documents/${docId}/spreadsheet`, { headers: authHeaders })
+      .then(r => r.json())
+      .then(data => setSheets(data.sheets ?? []))
+      .catch(() => setError(true));
+  }, [docId, backendUrl, authHeaders]);
 
+  if (error) return <p className="text-gray-400">Failed to parse spreadsheet.</p>;
   if (!sheets.length) return <p className="text-gray-400 animate-pulse">Parsing spreadsheet…</p>;
 
   const { rows } = sheets[activeSheet];
@@ -125,25 +122,22 @@ function SpreadsheetViewer({ arrayBuffer }: { arrayBuffer: ArrayBuffer }) {
 // ── Unified Doc Viewer Modal ──────────────────────────────────────────────────
 function DocViewer({ doc, onClose }: { doc: Document; onClose: () => void }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const [arrayBuffer, setArrayBuffer] = useState<ArrayBuffer | null>(null);
   const [error, setError] = useState(false);
+  const authHeaders = getAuthHeaders();
 
   useEffect(() => {
     let url = '';
     (async () => {
       try {
-        const res = await fetch(downloadUrl(doc.id), { headers: getAuthHeaders() });
+        const res = await fetch(downloadUrl(doc.id), { headers: authHeaders });
         const blob = await res.blob();
         url = URL.createObjectURL(blob);
         setBlobUrl(url);
-        if (isXlsx(doc.mimeType)) {
-          const buf = await blob.arrayBuffer();
-          setArrayBuffer(buf);
-        }
       } catch { setError(true); }
     })();
     return () => { if (url) URL.revokeObjectURL(url); };
-  }, [doc.id, doc.mimeType]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc.id]);
 
   // Close on Escape
   useEffect(() => {
@@ -188,11 +182,8 @@ function DocViewer({ doc, onClose }: { doc: Document; onClose: () => void }) {
           // eslint-disable-next-line @next/next/no-img-element
           <img src={blobUrl} alt={doc.title} className="max-w-full max-h-full object-contain rounded-lg p-4" />
         )}
-        {blobUrl && isSpreadsheet && arrayBuffer && (
-          <SpreadsheetViewer arrayBuffer={arrayBuffer} />
-        )}
-        {blobUrl && isSpreadsheet && !arrayBuffer && (
-          <p className="text-gray-400 animate-pulse">Parsing spreadsheet…</p>
+        {blobUrl && isSpreadsheet && (
+          <SpreadsheetViewer docId={doc.id} headers={authHeaders} />
         )}
         {blobUrl && !isPdf && !isImage && !isSpreadsheet && (
           <p className="text-gray-400">Preview not available. <a href={blobUrl} download={doc.filename} className="text-red-400 hover:underline">Download the file</a> to view it.</p>
