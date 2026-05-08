@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { apiFetch } from '../lib/api';
 import { useAuth } from '../components/useAuth';
 import NavBar from '../components/NavBar';
@@ -16,9 +17,7 @@ interface PricingMatrix {
 
 function calcSellPrice(tiers: number[][], cost: number): number | null {
   for (const [low, high, margin] of tiers) {
-    if (cost >= low && cost <= high) {
-      return cost / (1 - margin / 100);
-    }
+    if (cost >= low && cost <= high) return cost / (1 - margin / 100);
   }
   return null;
 }
@@ -35,6 +34,7 @@ export default function CalculatorPage() {
   const [loadingMatrices, setLoadingMatrices] = useState(true);
   const [selectedMatrix, setSelectedMatrix] = useState<PricingMatrix | null>(null);
   const [cost, setCost] = useState('');
+  const [showTiers, setShowTiers] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) router.push('/login');
@@ -53,137 +53,141 @@ export default function CalculatorPage() {
 
   const costNum = parseFloat(cost);
   const isValidCost = cost !== '' && !isNaN(costNum) && costNum >= 0;
-  const sellPrice = isValidCost && selectedMatrix
-    ? calcSellPrice(selectedMatrix.tiers, costNum)
-    : null;
-  const margin = sellPrice ? ((sellPrice - costNum) / sellPrice * 100) : null;
+  const sellPrice = isValidCost && selectedMatrix ? calcSellPrice(selectedMatrix.tiers, costNum) : null;
+  const grossProfit = sellPrice ? sellPrice - costNum : null;
+  const marginPct = sellPrice ? ((sellPrice - costNum) / sellPrice * 100) : null;
 
-  if (authLoading || !user) return null;
+  if (authLoading || !user) {
+    return <div className="min-h-screen bg-gray-950" />;
+  }
 
   return (
-    <div className="min-h-screen bg-[#EAF1EB] flex flex-col">
+    <div className="min-h-screen bg-gray-950 text-white flex flex-col">
       <NavBar />
 
-      <main className="flex-1 flex flex-col items-center px-5 py-10">
-        <div className="w-full max-w-md">
-          <h1 className="text-center font-bold text-xl text-[#201F1F] mb-1 tracking-tight">
-            Non-Stock Pricing Calculator
-          </h1>
-          <p className="text-center text-xs text-[#666] uppercase tracking-widest mb-8">
-            Cost → Sell Price
-          </p>
+      <main className="flex-1 max-w-lg mx-auto w-full px-5 py-10">
+        <h1 className="text-xl font-bold text-white mb-1">Non-Stock Pricing</h1>
+        <p className="text-xs text-gray-500 uppercase tracking-widest mb-8">Cost → Sell Price Calculator</p>
 
-          <div
-            className="bg-white rounded-xl overflow-hidden shadow-lg"
-            style={{ borderTop: '6px solid #EF1E24', border: '2px solid #ddd', borderTopColor: '#EF1E24' }}
-          >
-            <div className="p-6 space-y-6">
+        {/* Category selector */}
+        <div className="mb-5">
+          <label className="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
+            Pricing Category
+          </label>
+          {loadingMatrices ? (
+            <div className="h-12 bg-gray-800 rounded-lg animate-pulse" />
+          ) : (
+            <div className="relative">
+              <select
+                className="w-full appearance-none bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 pr-10 font-semibold text-sm text-white focus:outline-none focus:border-red-500 cursor-pointer"
+                value={selectedMatrix?.id || ''}
+                onChange={e => {
+                  setSelectedMatrix(matrices.find(m => m.id === e.target.value) || null);
+                  setCost('');
+                }}
+              >
+                {matrices.map(m => (
+                  <option key={m.id} value={m.id} className="bg-gray-800">{m.label || m.name}</option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            </div>
+          )}
+        </div>
 
-              {/* Category selector */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[#EF1E24] mb-2">
-                  Pricing Category
-                </p>
-                {loadingMatrices ? (
-                  <div className="h-12 bg-[#EAF1EB] rounded-lg animate-pulse" />
-                ) : (
-                  <div className="relative">
-                    <select
-                      className="w-full appearance-none bg-[#EAF1EB] border-2 border-[#ddd] rounded-lg px-4 py-3 pr-10 font-bold text-sm text-[#201F1F] focus:outline-none focus:border-[#EF1E24] cursor-pointer"
-                      value={selectedMatrix?.id || ''}
-                      onChange={e => setSelectedMatrix(matrices.find(m => m.id === e.target.value) || null)}
-                    >
-                      {matrices.map(m => (
-                        <option key={m.id} value={m.id}>{m.label || m.name}</option>
-                      ))}
-                    </select>
-                    <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[#EF1E24] text-[9px]">▼</span>
-                  </div>
-                )}
-              </div>
+        {/* Cost input */}
+        <div className="mb-6">
+          <label className="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
+            Your Cost
+          </label>
+          <div className="flex items-center gap-3 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus-within:border-red-500 transition-colors">
+            <span className="text-red-500 text-2xl font-black leading-none select-none">$</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.01"
+              placeholder="0.00"
+              value={cost}
+              onChange={e => setCost(e.target.value)}
+              className="flex-1 bg-transparent text-xl font-bold text-white placeholder-gray-600 focus:outline-none
+                         [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+          </div>
+        </div>
 
-              <hr className="border-[#ddd]" />
-
-              {/* Cost input */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[#EF1E24] mb-2">
-                  Your Cost
-                </p>
-                <div className="flex items-center gap-3">
-                  <span className="text-[#EF1E24] text-4xl font-black leading-none">$</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={cost}
-                    onChange={e => setCost(e.target.value)}
-                    className="flex-1 bg-[#EAF1EB] border-2 border-[#ddd] rounded-lg px-4 py-3 text-xl font-bold text-[#201F1F] focus:outline-none focus:border-[#EF1E24]
-                               [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                </div>
-              </div>
-
-              {/* Result */}
-              <div>
-                {!isValidCost || sellPrice === null ? (
-                  <div className="bg-[#EAF1EB] border-2 border-dashed border-[#ddd] rounded-xl py-10 text-center">
-                    <span className="text-3xl block mb-3">🧮</span>
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-[#aaa]">
-                      Enter a cost above
-                    </p>
-                  </div>
-                ) : (
-                  <div className="bg-[#fde8e8] border-2 border-[#EF1E24] rounded-xl py-6 text-center animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <p className="text-[11px] font-bold uppercase tracking-widest text-[#b81519] mb-2">
-                      Suggested Sell Price
-                    </p>
-                    <p className="text-6xl font-black text-[#EF1E24] leading-none tracking-tight">
-                      {fmt(sellPrice)}
-                    </p>
-                    <p className="text-xs text-[#b81519] mt-3 font-semibold">
-                      {margin?.toFixed(1)}% margin &nbsp;·&nbsp; ${(sellPrice - costNum).toFixed(2)} GP
-                    </p>
-                  </div>
-                )}
-              </div>
-
+        {/* Result */}
+        {!isValidCost || sellPrice === null ? (
+          <div className="rounded-xl border border-dashed border-gray-700 py-12 text-center">
+            <p className="text-gray-600 text-xs font-semibold uppercase tracking-widest">
+              Enter a cost to see the sell price
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl bg-gray-900 border border-red-500/40 p-6 text-center">
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">
+              Suggested Sell Price
+            </p>
+            <p className="text-6xl font-black text-red-500 leading-none tracking-tight">
+              {fmt(sellPrice)}
+            </p>
+            <div className="flex justify-center gap-6 mt-4 text-sm text-gray-400">
+              <span>
+                <span className="text-white font-semibold">{marginPct?.toFixed(1)}%</span> margin
+              </span>
+              <span className="text-gray-700">|</span>
+              <span>
+                <span className="text-white font-semibold">{fmt(grossProfit!)}</span> GP
+              </span>
             </div>
           </div>
+        )}
 
-          {/* Tier reference */}
-          {selectedMatrix && (
-            <details className="mt-6 bg-white rounded-xl border-2 border-[#ddd] overflow-hidden">
-              <summary className="px-5 py-3 text-xs font-bold uppercase tracking-widest text-[#666] cursor-pointer select-none">
-                Tier reference — {selectedMatrix.label || selectedMatrix.name}
-              </summary>
-              <div className="px-5 pb-4">
-                <table className="w-full text-xs mt-2">
+        {/* Tier reference toggle */}
+        {selectedMatrix && (
+          <div className="mt-5 rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
+            <button
+              onClick={() => setShowTiers(v => !v)}
+              className="w-full flex items-center justify-between px-5 py-3 text-xs font-semibold text-gray-400 uppercase tracking-widest hover:text-white transition-colors"
+            >
+              <span>Tier Reference — {selectedMatrix.label || selectedMatrix.name}</span>
+              {showTiers ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+
+            {showTiers && (
+              <div className="px-5 pb-4 border-t border-gray-800">
+                <table className="w-full text-xs mt-3">
                   <thead>
-                    <tr className="text-[#aaa] border-b border-[#eee]">
-                      <th className="text-left pb-1 pr-4">Cost Range</th>
-                      <th className="text-left pb-1">Margin</th>
+                    <tr className="text-gray-500 border-b border-gray-800">
+                      <th className="text-left pb-2 pr-4 font-semibold">Cost Range</th>
+                      <th className="text-left pb-2 font-semibold">Margin</th>
+                      <th className="text-right pb-2 font-semibold">GP @ Your Cost</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-[#f5f5f5]">
-                    {selectedMatrix.tiers.map(([low, high, margin], i) => {
+                  <tbody className="divide-y divide-gray-800/50">
+                    {selectedMatrix.tiers.map(([low, high, tierMargin], i) => {
                       const active = isValidCost && costNum >= low && costNum <= high;
+                      const exSell = isValidCost ? costNum / (1 - tierMargin / 100) : null;
                       return (
-                        <tr key={i} className={active ? 'bg-[#fde8e8] font-bold text-[#EF1E24]' : 'text-[#666]'}>
-                          <td className="py-1 pr-4">
+                        <tr key={i} className={active ? 'bg-red-500/10' : ''}>
+                          <td className={`py-1.5 pr-4 ${active ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
                             {fmt(low)} – {high >= 9999 ? '∞' : fmt(high)}
                           </td>
-                          <td className="py-1">{margin}%</td>
+                          <td className={`py-1.5 ${active ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
+                            {tierMargin}%
+                          </td>
+                          <td className={`py-1.5 text-right ${active ? 'text-red-400 font-bold' : 'text-gray-600'}`}>
+                            {exSell ? fmt(exSell - costNum) : '—'}
+                          </td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
-            </details>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </main>
     </div>
   );
