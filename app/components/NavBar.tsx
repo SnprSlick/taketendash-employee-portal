@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { Settings, LogOut, Megaphone, Home } from 'lucide-react';
+import { Settings, LogOut, Megaphone, Home, Calculator } from 'lucide-react';
 import { useAuth } from './useAuth';
 import { clearAuth, isAdmin } from '../lib/api';
 
@@ -47,6 +47,7 @@ export default function NavBar() {
       <nav className="flex items-center gap-1">
         {navLink('/', 'Home', Home)}
         {navLink('/announcements', 'Announcements', Megaphone)}
+        {navLink('/calculator', 'Pricing', Calculator)}
       </nav>
 
       {/* Right side */}
