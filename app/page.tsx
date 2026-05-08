@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Pin, Download, FileText, FileImage, File, ChevronRight } from 'lucide-react';
+import { Search, Pin, Download, FileText, FileImage, File, ChevronRight, Eye, X } from 'lucide-react';
 import { useAuth } from './components/useAuth';
 import NavBar from './components/NavBar';
 import { apiFetch, downloadUrl, getAuthHeaders } from './lib/api';
@@ -31,6 +31,79 @@ function formatBytes(b: number) {
   return `${(b / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// ── PDF / Image Viewer Modal ──────────────────────────────────────────────────
+function DocViewer({ doc, onClose }: { doc: Document; onClose: () => void }) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let url: string;
+    (async () => {
+      try {
+        const res = await fetch(downloadUrl(doc.id), { headers: getAuthHeaders() });
+        const blob = await res.blob();
+        url = URL.createObjectURL(blob);
+        setBlobUrl(url);
+      } catch { setError(true); }
+    })();
+    return () => { if (url) URL.revokeObjectURL(url); };
+  }, [doc.id]);
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
+
+  const isPdf = doc.mimeType === 'application/pdf';
+  const isImage = doc.mimeType.startsWith('image/');
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-gray-950/95 backdrop-blur-sm">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-800 bg-gray-900 flex-shrink-0">
+        <FileIcon mime={doc.mimeType} />
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-white truncate">{doc.title}</p>
+          {doc.description && <p className="text-xs text-gray-400 truncate">{doc.description}</p>}
+        </div>
+        <a
+          href={blobUrl ?? '#'}
+          download={doc.filename}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 hover:text-white text-sm rounded-lg transition-colors"
+        >
+          <Download className="w-4 h-4" /> Download
+        </a>
+        <button onClick={onClose} className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors" title="Close (Esc)">
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Content */}
+      <div className="flex-1 overflow-hidden flex items-center justify-center p-4">
+        {error && <p className="text-gray-400">Failed to load document.</p>}
+        {!blobUrl && !error && <p className="text-gray-400 animate-pulse">Loading…</p>}
+        {blobUrl && isPdf && (
+          <iframe
+            src={blobUrl}
+            className="w-full h-full rounded-lg border border-gray-800"
+            title={doc.title}
+          />
+        )}
+        {blobUrl && isImage && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={blobUrl} alt={doc.title} className="max-w-full max-h-full object-contain rounded-lg" />
+        )}
+        {blobUrl && !isPdf && !isImage && (
+          <p className="text-gray-400">Preview not available. <a href={blobUrl} download={doc.filename} className="text-red-400 hover:underline">Download the file</a> to view it.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function HomePage() {
   const router = useRouter();
   const { user, loading } = useAuth();
@@ -47,6 +120,9 @@ export default function HomePage() {
   const [docTotal, setDocTotal] = useState(0);
   const [docLoading, setDocLoading] = useState(false);
   const [query, setQuery] = useState('');
+
+  // Viewer
+  const [viewerDoc, setViewerDoc] = useState<Document | null>(null);
 
   // Announcements
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -100,6 +176,8 @@ export default function HomePage() {
     a.click();
     URL.revokeObjectURL(a.href);
   }
+
+  const closeViewer = useCallback(() => setViewerDoc(null), []);
 
   if (loading) return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">Loading…</div>;
 
@@ -202,38 +280,59 @@ export default function HomePage() {
                   <div className="text-center py-16 text-gray-500">No documents found</div>
                 ) : (
                   <div className="grid gap-3">
-                    {docs.map(doc => (
-                      <div key={doc.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start gap-4 hover:border-gray-600 transition-colors">
-                        <div className="flex-shrink-0 mt-0.5"><FileIcon mime={doc.mimeType} size="md" /></div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-white">{doc.title}</p>
-                          {doc.description && <p className="text-sm text-gray-400 mt-0.5 line-clamp-1">{doc.description}</p>}
-                          <div className="flex flex-wrap items-center gap-2 mt-2">
-                            {doc.category && (
+                    {docs.map(doc => {
+                      const canPreview = doc.mimeType === 'application/pdf' || doc.mimeType.startsWith('image/');
+                      return (
+                        <div key={doc.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start gap-4 hover:border-gray-600 transition-colors">
+                          <div className="flex-shrink-0 mt-0.5 cursor-pointer" onClick={() => setViewerDoc(doc)}>
+                            <FileIcon mime={doc.mimeType} size="md" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p
+                              className="font-semibold text-white cursor-pointer hover:text-red-400 transition-colors"
+                              onClick={() => setViewerDoc(doc)}
+                            >
+                              {doc.title}
+                            </p>
+                            {doc.description && <p className="text-sm text-gray-400 mt-0.5 line-clamp-1">{doc.description}</p>}
+                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                              {doc.category && (
+                                <button
+                                  onClick={() => selectCategory(doc.category!)}
+                                  className="px-2 py-0.5 bg-gray-800 text-gray-300 text-xs rounded-full border border-gray-700 hover:border-gray-500 hover:text-white transition-colors"
+                                >
+                                  {doc.category}
+                                </button>
+                              )}
+                              {doc.tags.map(t => (
+                                <span key={t} className="px-2 py-0.5 bg-red-950/40 text-red-300 text-xs rounded-full border border-red-900/50">{t}</span>
+                              ))}
+                              {doc.keywords?.slice(0, 4).map(k => (
+                                <span key={k} className="px-2 py-0.5 bg-blue-950/40 text-blue-300 text-xs rounded-full border border-blue-900/50">{k}</span>
+                              ))}
+                              <span className="text-xs text-gray-600 ml-auto">{formatBytes(doc.fileSize)}</span>
+                            </div>
+                          </div>
+                          <div className="flex-shrink-0 flex items-center gap-2">
+                            {canPreview && (
                               <button
-                                onClick={() => selectCategory(doc.category!)}
-                                className="px-2 py-0.5 bg-gray-800 text-gray-300 text-xs rounded-full border border-gray-700 hover:border-gray-500 hover:text-white transition-colors"
+                                onClick={() => setViewerDoc(doc)}
+                                className="flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-blue-700 border border-gray-700 hover:border-blue-600 text-gray-300 hover:text-white text-sm rounded-lg transition-colors"
+                                title="View in browser"
                               >
-                                {doc.category}
+                                <Eye className="w-4 h-4" /> View
                               </button>
                             )}
-                            {doc.tags.map(t => (
-                              <span key={t} className="px-2 py-0.5 bg-red-950/40 text-red-300 text-xs rounded-full border border-red-900/50">{t}</span>
-                            ))}
-                            {doc.keywords?.slice(0, 4).map(k => (
-                              <span key={k} className="px-2 py-0.5 bg-blue-950/40 text-blue-300 text-xs rounded-full border border-blue-900/50">{k}</span>
-                            ))}
-                            <span className="text-xs text-gray-600 ml-auto">{formatBytes(doc.fileSize)}</span>
+                            <button
+                              onClick={() => handleDownload(doc)}
+                              className="flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-red-600 border border-gray-700 hover:border-red-600 text-gray-300 hover:text-white text-sm rounded-lg transition-colors"
+                            >
+                              <Download className="w-4 h-4" /> Download
+                            </button>
                           </div>
                         </div>
-                        <button
-                          onClick={() => handleDownload(doc)}
-                          className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-red-600 border border-gray-700 hover:border-red-600 text-gray-300 hover:text-white text-sm rounded-lg transition-colors"
-                        >
-                          <Download className="w-4 h-4" /> Download
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -241,6 +340,9 @@ export default function HomePage() {
           )}
         </main>
       </div>
+
+      {/* ── PDF / Image Viewer Modal ── */}
+      {viewerDoc && <DocViewer doc={viewerDoc} onClose={closeViewer} />}
     </div>
   );
 }
