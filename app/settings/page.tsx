@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Upload, Trash2, Pencil, Pin, PinOff, Plus, X, Check, FileText, FileImage, File, Megaphone, Tag, FileSearch, Eye, EyeOff, Search, ArrowUpDown,
+  Upload, Trash2, Pencil, Pin, PinOff, Plus, X, Check, FileText, FileImage, File, Megaphone, Tag, FileSearch, Eye, EyeOff, Search, ArrowUpDown, FolderOpen,
 } from 'lucide-react';
 import NavBar from '../components/NavBar';
 import { useAuth } from '../components/useAuth';
@@ -35,7 +35,7 @@ interface Announcement {
   author?: { firstName?: string; lastName?: string };
 }
 
-interface PendingFile { file: File; title: string; }
+interface PendingFile { file: File; title: string; category: string; }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -143,6 +143,7 @@ function DocumentsTab() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
   const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { loadDocs(); }, []); // fires after SettingsPage confirms auth
 
@@ -166,10 +167,15 @@ function DocumentsTab() {
 
   function handleFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files || []);
-    const entries: PendingFile[] = files.map(f => ({
-      file: f,
-      title: f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim(),
-    }));
+    const entries: PendingFile[] = files.map(f => {
+      const parts = f.webkitRelativePath ? f.webkitRelativePath.split('/') : [];
+      const folderCategory = parts.length > 1 ? parts[parts.length - 2] : '';
+      return {
+        file: f,
+        title: f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim(),
+        category: folderCategory,
+      };
+    });
     setPendingFiles(prev => [...prev, ...entries]);
     e.target.value = '';
   }
@@ -188,7 +194,8 @@ function DocumentsTab() {
         form.append('file', file);
         form.append('title', title.trim());
         if (uploadShared.description) form.append('description', uploadShared.description);
-        if (uploadShared.category) form.append('category', uploadShared.category);
+        const effectiveCategory = pf.category || uploadShared.category;
+        if (effectiveCategory) form.append('category', effectiveCategory);
         if (uploadShared.tags) form.append('tags', uploadShared.tags.split(',').map(t => t.trim()).filter(Boolean).join(','));
         await apiUpload('/documents/upload', form);
         setUploadProgress({ done: i + 1, total: pendingFiles.length });
@@ -295,26 +302,53 @@ function DocumentsTab() {
             />
           </div>
           <div>
-            <label className="text-xs text-gray-400 mb-1 block">Files <span className="text-red-500">*</span> <span className="text-gray-600">(select one or more)</span></label>
-            <input
-              ref={fileRef}
-              type="file"
-              multiple
-              className="w-full text-sm text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-red-600 file:text-white file:cursor-pointer hover:file:bg-red-700"
-              onChange={handleFilesChange}
-            />
+            <label className="text-xs text-gray-400 mb-1 block">Files <span className="text-red-500">*</span></label>
+            <div className="flex gap-2">
+              <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 hover:border-gray-500 hover:text-white cursor-pointer transition-colors">
+                <Upload className="w-3.5 h-3.5" />
+                Select files
+                <input
+                  ref={fileRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={handleFilesChange}
+                />
+              </label>
+              <label className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-gray-300 hover:border-gray-500 hover:text-white cursor-pointer transition-colors">
+                <FolderOpen className="w-3.5 h-3.5" />
+                Upload folder
+                <input
+                  ref={folderRef}
+                  type="file"
+                  // @ts-expect-error webkitdirectory is non-standard
+                  webkitdirectory=""
+                  multiple
+                  className="hidden"
+                  onChange={handleFilesChange}
+                />
+              </label>
+            </div>
+            <p className="text-xs text-gray-600 mt-1">Folder uploads auto-set category from folder name</p>
           </div>
           {pendingFiles.length > 0 && (
             <div className="space-y-2">
-              <p className="text-xs text-gray-400">{pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''} selected — edit titles if needed:</p>
+              <p className="text-xs text-gray-400">{pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''} queued — edit titles/categories as needed:</p>
               {pendingFiles.map((pf, i) => (
                 <div key={i} className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
                   <FileIcon mime={pf.file.type} />
                   <input
                     value={pf.title}
                     onChange={e => setPendingFiles(prev => prev.map((p, j) => j === i ? { ...p, title: e.target.value } : p))}
-                    className="flex-1 bg-transparent text-sm text-white focus:outline-none border-b border-gray-600 focus:border-red-500 pb-0.5"
-                    placeholder="Document title"
+                    className="flex-1 min-w-0 bg-transparent text-sm text-white focus:outline-none border-b border-gray-600 focus:border-red-500 pb-0.5"
+                    placeholder="Title"
+                  />
+                  <input
+                    value={pf.category}
+                    onChange={e => setPendingFiles(prev => prev.map((p, j) => j === i ? { ...p, category: e.target.value } : p))}
+                    list="cat-list"
+                    className="w-28 bg-transparent text-xs text-gray-400 focus:text-white focus:outline-none border-b border-gray-700 focus:border-red-500 pb-0.5 flex-shrink-0"
+                    placeholder="Category"
                   />
                   <span className="text-xs text-gray-500 flex-shrink-0">{formatBytes(pf.file.size)}</span>
                   <button
@@ -341,7 +375,7 @@ function DocumentsTab() {
             {pendingFiles.length > 0 && !uploading && (
               <button
                 type="button"
-                onClick={() => { setPendingFiles([]); if (fileRef.current) fileRef.current.value = ''; }}
+                onClick={() => { setPendingFiles([]); if (fileRef.current) fileRef.current.value = ''; if (folderRef.current) folderRef.current.value = ''; }}
                 className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
               >
                 Clear all
