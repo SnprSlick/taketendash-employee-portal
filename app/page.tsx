@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Pin, Download, FileText, FileImage, File, ChevronRight, Eye, X } from 'lucide-react';
+import { Search, Pin, Download, FileText, FileImage, File, ChevronRight, Eye, X, Table2 } from 'lucide-react';
 import { useAuth } from './components/useAuth';
 import NavBar from './components/NavBar';
 import { apiFetch, downloadUrl, getAuthHeaders } from './lib/api';
@@ -18,10 +18,21 @@ interface Document {
   fileSize: number; uploadedAt: string;
 }
 
+const XLSX_MIMES = [
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+];
+
+function isXlsx(mime: string) { return XLSX_MIMES.includes(mime); }
+function canPreview(mime: string) {
+  return mime === 'application/pdf' || mime.startsWith('image/') || isXlsx(mime);
+}
+
 function FileIcon({ mime, size = 'sm' }: { mime: string; size?: 'sm' | 'md' }) {
   const cls = size === 'md' ? 'w-8 h-8' : 'w-5 h-5';
   if (mime.startsWith('image/')) return <FileImage className={`${cls} text-blue-400`} />;
   if (mime === 'application/pdf') return <FileText className={`${cls} text-red-400`} />;
+  if (isXlsx(mime)) return <Table2 className={`${cls} text-green-400`} />;
   return <File className={`${cls} text-gray-400`} />;
 }
 
@@ -31,23 +42,108 @@ function formatBytes(b: number) {
   return `${(b / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// ── PDF / Image Viewer Modal ──────────────────────────────────────────────────
+// ── Spreadsheet viewer ────────────────────────────────────────────────────────
+function SpreadsheetViewer({ arrayBuffer }: { arrayBuffer: ArrayBuffer }) {
+  const [sheets, setSheets] = useState<{ name: string; rows: string[][] }[]>([]);
+  const [activeSheet, setActiveSheet] = useState(0);
+
+  useEffect(() => {
+    (async () => {
+      const XLSX = (await import('xlsx')).default;
+      const wb = XLSX.read(arrayBuffer, { type: 'array' });
+      const parsed = wb.SheetNames.map(name => {
+        const ws = wb.Sheets[name];
+        const rows: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as string[][];
+        return { name, rows };
+      });
+      setSheets(parsed);
+    })();
+  }, [arrayBuffer]);
+
+  if (!sheets.length) return <p className="text-gray-400 animate-pulse">Parsing spreadsheet…</p>;
+
+  const { rows } = sheets[activeSheet];
+  const headers = rows[0] ?? [];
+  const body = rows.slice(1);
+
+  return (
+    <div className="w-full h-full flex flex-col">
+      {/* Sheet tabs */}
+      {sheets.length > 1 && (
+        <div className="flex gap-1 px-4 pt-3 pb-0 flex-shrink-0 flex-wrap">
+          {sheets.map((s, i) => (
+            <button
+              key={s.name}
+              onClick={() => setActiveSheet(i)}
+              className={`px-3 py-1.5 text-sm rounded-t-lg border-b-2 transition-colors ${
+                i === activeSheet
+                  ? 'bg-gray-800 text-white border-green-500'
+                  : 'bg-gray-900 text-gray-400 border-transparent hover:text-white'
+              }`}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="flex-1 overflow-auto p-4">
+        <table className="text-sm border-collapse w-full">
+          {headers.length > 0 && (
+            <thead>
+              <tr>
+                {headers.map((h, i) => (
+                  <th
+                    key={i}
+                    className="px-3 py-2 text-left text-xs font-semibold text-gray-300 bg-gray-800 border border-gray-700 whitespace-nowrap sticky top-0"
+                  >
+                    {String(h)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+          )}
+          <tbody>
+            {body.map((row, ri) => (
+              <tr key={ri} className={ri % 2 === 0 ? 'bg-gray-900' : 'bg-gray-950'}>
+                {headers.map((_, ci) => (
+                  <td key={ci} className="px-3 py-1.5 text-gray-300 border border-gray-800 whitespace-nowrap max-w-xs truncate">
+                    {String(row[ci] ?? '')}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {body.length === 0 && <p className="text-center py-8 text-gray-500">No data in this sheet</p>}
+      </div>
+    </div>
+  );
+}
+
+// ── Unified Doc Viewer Modal ──────────────────────────────────────────────────
 function DocViewer({ doc, onClose }: { doc: Document; onClose: () => void }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [arrayBuffer, setArrayBuffer] = useState<ArrayBuffer | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    let url: string;
+    let url = '';
     (async () => {
       try {
         const res = await fetch(downloadUrl(doc.id), { headers: getAuthHeaders() });
         const blob = await res.blob();
         url = URL.createObjectURL(blob);
         setBlobUrl(url);
+        if (isXlsx(doc.mimeType)) {
+          const buf = await blob.arrayBuffer();
+          setArrayBuffer(buf);
+        }
       } catch { setError(true); }
     })();
     return () => { if (url) URL.revokeObjectURL(url); };
-  }, [doc.id]);
+  }, [doc.id, doc.mimeType]);
 
   // Close on Escape
   useEffect(() => {
@@ -58,6 +154,7 @@ function DocViewer({ doc, onClose }: { doc: Document; onClose: () => void }) {
 
   const isPdf = doc.mimeType === 'application/pdf';
   const isImage = doc.mimeType.startsWith('image/');
+  const isSpreadsheet = isXlsx(doc.mimeType);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-gray-950/95 backdrop-blur-sm">
@@ -81,21 +178,23 @@ function DocViewer({ doc, onClose }: { doc: Document; onClose: () => void }) {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-hidden flex items-center justify-center p-4">
+      <div className="flex-1 overflow-hidden flex items-center justify-center">
         {error && <p className="text-gray-400">Failed to load document.</p>}
         {!blobUrl && !error && <p className="text-gray-400 animate-pulse">Loading…</p>}
         {blobUrl && isPdf && (
-          <iframe
-            src={blobUrl}
-            className="w-full h-full rounded-lg border border-gray-800"
-            title={doc.title}
-          />
+          <iframe src={blobUrl} className="w-full h-full" title={doc.title} />
         )}
         {blobUrl && isImage && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={blobUrl} alt={doc.title} className="max-w-full max-h-full object-contain rounded-lg" />
+          <img src={blobUrl} alt={doc.title} className="max-w-full max-h-full object-contain rounded-lg p-4" />
         )}
-        {blobUrl && !isPdf && !isImage && (
+        {blobUrl && isSpreadsheet && arrayBuffer && (
+          <SpreadsheetViewer arrayBuffer={arrayBuffer} />
+        )}
+        {blobUrl && isSpreadsheet && !arrayBuffer && (
+          <p className="text-gray-400 animate-pulse">Parsing spreadsheet…</p>
+        )}
+        {blobUrl && !isPdf && !isImage && !isSpreadsheet && (
           <p className="text-gray-400">Preview not available. <a href={blobUrl} download={doc.filename} className="text-red-400 hover:underline">Download the file</a> to view it.</p>
         )}
       </div>
@@ -281,7 +380,7 @@ export default function HomePage() {
                 ) : (
                   <div className="grid gap-3">
                     {docs.map(doc => {
-                      const canPreview = doc.mimeType === 'application/pdf' || doc.mimeType.startsWith('image/');
+                      const showPreview = canPreview(doc.mimeType);
                       return (
                         <div key={doc.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start gap-4 hover:border-gray-600 transition-colors">
                           <div className="flex-shrink-0 mt-0.5 cursor-pointer" onClick={() => setViewerDoc(doc)}>
@@ -314,7 +413,7 @@ export default function HomePage() {
                             </div>
                           </div>
                           <div className="flex-shrink-0 flex items-center gap-2">
-                            {canPreview && (
+                            {showPreview && (
                               <button
                                 onClick={() => setViewerDoc(doc)}
                                 className="flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-blue-700 border border-gray-700 hover:border-blue-600 text-gray-300 hover:text-white text-sm rounded-lg transition-colors"
