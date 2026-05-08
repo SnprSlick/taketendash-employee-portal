@@ -49,7 +49,7 @@ function SpreadsheetViewer({ arrayBuffer }: { arrayBuffer: ArrayBuffer }) {
 
   useEffect(() => {
     (async () => {
-      const XLSX = (await import('xlsx')).default;
+      const XLSX = await import('xlsx');
       const wb = XLSX.read(arrayBuffer, { type: 'array' });
       const parsed = wb.SheetNames.map(name => {
         const ws = wb.Sheets[name];
