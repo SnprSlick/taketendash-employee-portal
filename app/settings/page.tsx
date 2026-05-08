@@ -166,7 +166,7 @@ function DocumentsTab() {
   }
 
   function handleFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || []);
+    const files = Array.from(e.target.files || []).filter(f => f.size > 0);
     const entries: PendingFile[] = files.map(f => {
       const parts = f.webkitRelativePath ? f.webkitRelativePath.split('/') : [];
       const folderCategory = parts.length > 1 ? parts[parts.length - 2] : '';
@@ -187,19 +187,27 @@ function DocumentsTab() {
     setUploading(true);
     setUploadProgress({ done: 0, total: pendingFiles.length });
     let failed = 0;
-    for (let i = 0; i < pendingFiles.length; i++) {
-      const { file, title } = pendingFiles[i];
-      try {
-        const form = new FormData();
-        form.append('file', file);
-        form.append('title', title.trim());
-        if (uploadShared.description) form.append('description', uploadShared.description);
-        const effectiveCategory = pf.category || uploadShared.category;
-        if (effectiveCategory) form.append('category', effectiveCategory);
-        if (uploadShared.tags) form.append('tags', uploadShared.tags.split(',').map(t => t.trim()).filter(Boolean).join(','));
-        await apiUpload('/documents/upload', form);
-        setUploadProgress({ done: i + 1, total: pendingFiles.length });
-      } catch { failed++; }
+    let done = 0;
+
+    // Upload in batches of 5 concurrently
+    const BATCH = 5;
+    const snapshot = [...pendingFiles];
+    for (let i = 0; i < snapshot.length; i += BATCH) {
+      const batch = snapshot.slice(i, i + BATCH);
+      await Promise.all(batch.map(async ({ file, title, category }) => {
+        try {
+          const form = new FormData();
+          form.append('file', file);
+          form.append('title', title.trim());
+          if (uploadShared.description) form.append('description', uploadShared.description);
+          const effectiveCategory = category || uploadShared.category;
+          if (effectiveCategory) form.append('category', effectiveCategory);
+          if (uploadShared.tags) form.append('tags', uploadShared.tags.split(',').map(t => t.trim()).filter(Boolean).join(','));
+          await apiUpload('/documents/upload', form);
+        } catch { failed++; }
+        done++;
+        setUploadProgress({ done, total: snapshot.length });
+      }));
     }
     setPendingFiles([]);
     setUploadShared({ description: '', category: '', tags: '' });
