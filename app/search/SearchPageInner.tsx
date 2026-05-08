@@ -12,6 +12,8 @@ interface Document {
   description?: string;
   category?: string;
   tags: string[];
+  keywords?: string[];
+  transcription?: string | null;
   filename: string;
   mimeType: string;
   fileSize: number;
@@ -29,6 +31,31 @@ function formatBytes(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getSnippet(text: string, query: string, contextChars = 140): string {
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text.slice(0, contextChars * 2) + (text.length > contextChars * 2 ? '…' : '');
+  const start = Math.max(0, idx - contextChars);
+  const end = Math.min(text.length, idx + query.length + contextChars);
+  return (start > 0 ? '…' : '') + text.slice(start, end) + (end < text.length ? '…' : '');
+}
+
+function HighlightText({ text, term }: { text: string; term: string }) {
+  if (!term || !text) return <>{text}</>;
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp(`(${escaped})`, 'gi');
+  const parts = text.split(regex);
+  const termLower = term.toLowerCase();
+  return (
+    <>
+      {parts.map((part, i) =>
+        part.toLowerCase() === termLower
+          ? <mark key={i} className="bg-yellow-500/40 text-yellow-100 rounded-sm px-px not-italic">{part}</mark>
+          : <span key={i}>{part}</span>
+      )}
+    </>
+  );
 }
 
 export default function SearchPageInner() {
@@ -116,33 +143,58 @@ export default function SearchPageInner() {
               </p>
             )}
             <div className="space-y-3">
-              {results.map(doc => (
-                <div key={doc.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start gap-4 hover:border-gray-600 transition-colors">
-                  <div className="flex-shrink-0 mt-0.5">
-                    <FileIcon mime={doc.mimeType} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-white">{doc.title}</p>
-                    {doc.description && <p className="text-sm text-gray-400 mt-0.5 line-clamp-2">{doc.description}</p>}
-                    <div className="flex flex-wrap items-center gap-2 mt-2">
-                      {doc.category && (
-                        <span className="px-2 py-0.5 bg-gray-800 text-gray-300 text-xs rounded-full border border-gray-700">{doc.category}</span>
-                      )}
-                      {doc.tags.map(tag => (
-                        <span key={tag} className="px-2 py-0.5 bg-red-950/40 text-red-300 text-xs rounded-full border border-red-900/50">{tag}</span>
-                      ))}
-                      <span className="text-xs text-gray-600 ml-auto">{formatBytes(doc.fileSize)}</span>
+              {results.map(doc => {
+                const q = params.get('q') || '';
+                const snippet = doc.transcription ? getSnippet(doc.transcription, q) : null;
+                return (
+                  <div key={doc.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start gap-4 hover:border-gray-600 transition-colors">
+                    <div className="flex-shrink-0 mt-0.5">
+                      <FileIcon mime={doc.mimeType} />
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-white">
+                        <HighlightText text={doc.title} term={q} />
+                      </p>
+                      {doc.description && (
+                        <p className="text-sm text-gray-400 mt-0.5 line-clamp-2">
+                          <HighlightText text={doc.description} term={q} />
+                        </p>
+                      )}
+                      {snippet && (
+                        <p className="text-xs text-gray-500 mt-1.5 font-mono leading-relaxed bg-gray-950 rounded px-2 py-1.5 border border-gray-800">
+                          <HighlightText text={snippet} term={q} />
+                        </p>
+                      )}
+                      <div className="flex flex-wrap items-center gap-2 mt-2">
+                        {doc.category && (
+                          <span className="px-2 py-0.5 bg-gray-800 text-gray-300 text-xs rounded-full border border-gray-700">{doc.category}</span>
+                        )}
+                        {doc.tags.map(tag => (
+                          <span key={tag} className="px-2 py-0.5 bg-red-950/40 text-red-300 text-xs rounded-full border border-red-900/50">{tag}</span>
+                        ))}
+                        {doc.keywords?.slice(0, 6).map(k => (
+                          <span
+                            key={k}
+                            className={`px-2 py-0.5 text-xs rounded-full border ${
+                              q && k.toLowerCase().includes(q.toLowerCase())
+                                ? 'bg-yellow-900/40 text-yellow-200 border-yellow-700/50'
+                                : 'bg-blue-950/40 text-blue-300 border-blue-900/50'
+                            }`}
+                          >{k}</span>
+                        ))}
+                        <span className="text-xs text-gray-600 ml-auto">{formatBytes(doc.fileSize)}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDownload(doc)}
+                      className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-red-600 border border-gray-700 hover:border-red-600 text-gray-300 hover:text-white text-sm rounded-lg transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download
+                    </button>
                   </div>
-                  <button
-                    onClick={() => handleDownload(doc)}
-                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 bg-gray-800 hover:bg-red-600 border border-gray-700 hover:border-red-600 text-gray-300 hover:text-white text-sm rounded-lg transition-colors"
-                  >
-                    <Download className="w-4 h-4" />
-                    Download
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </>
         )}

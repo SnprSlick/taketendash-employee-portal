@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Upload, Trash2, Pencil, Pin, PinOff, Plus, X, Check, FileText, FileImage, File, Megaphone, Tag,
+  Upload, Trash2, Pencil, Pin, PinOff, Plus, X, Check, FileText, FileImage, File, Megaphone, Tag, FileSearch, Eye, EyeOff, Search, ArrowUpDown,
 } from 'lucide-react';
 import NavBar from '../components/NavBar';
 import { useAuth } from '../components/useAuth';
@@ -17,10 +17,13 @@ interface Document {
   description?: string;
   category?: string;
   tags: string[];
+  keywords: string[];
   filename: string;
   mimeType: string;
   fileSize: number;
   uploadedAt: string;
+  transcribedAt?: string | null;
+  transcription?: string | null;
 }
 
 interface Announcement {
@@ -31,6 +34,8 @@ interface Announcement {
   createdAt: string;
   author?: { firstName?: string; lastName?: string };
 }
+
+interface PendingFile { file: File; title: string; }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -69,6 +74,23 @@ function StatusBadge({ type, msg }: { type: 'success' | 'error'; msg: string }) 
   );
 }
 
+function HighlightText({ text, terms }: { text: string; terms: string[] }) {
+  if (!terms.length || !text) return <>{text}</>;
+  const escaped = terms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const regex = new RegExp(`(${escaped.join('|')})`, 'gi');
+  const parts = text.split(regex);
+  const termSet = new Set(terms.map(t => t.toLowerCase()));
+  return (
+    <>
+      {parts.map((part, i) =>
+        termSet.has(part.toLowerCase())
+          ? <mark key={i} className="bg-yellow-500/30 text-yellow-100 rounded-sm px-px not-italic">{part}</mark>
+          : <span key={i}>{part}</span>
+      )}
+    </>
+  );
+}
+
 // ─── Documents Tab ────────────────────────────────────────────────────────────
 
 function DocumentsTab() {
@@ -78,14 +100,51 @@ function DocumentsTab() {
   const [status, setStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', category: '', tags: '' });
+  const [viewingTranscriptionId, setViewingTranscriptionId] = useState<string | null>(null);
+
+  // Filter / sort state
+  const [filterSearch, setFilterSearch] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
+  const [sortBy, setSortBy] = useState<'date' | 'title' | 'size' | 'category'>('date');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const visibleDocs = useMemo(() => {
+    let result = [...docs];
+    if (filterCategory) result = result.filter(d => d.category === filterCategory);
+    if (filterSearch) {
+      const q = filterSearch.toLowerCase();
+      result = result.filter(d =>
+        d.title.toLowerCase().includes(q) ||
+        d.description?.toLowerCase().includes(q) ||
+        d.tags.some(t => t.toLowerCase().includes(q)) ||
+        d.keywords?.some(k => k.toLowerCase().includes(q)) ||
+        d.filename.toLowerCase().includes(q)
+      );
+    }
+    result.sort((a, b) => {
+      let cmp = 0;
+      if (sortBy === 'date') cmp = new Date(a.uploadedAt).getTime() - new Date(b.uploadedAt).getTime();
+      else if (sortBy === 'title') cmp = a.title.localeCompare(b.title);
+      else if (sortBy === 'size') cmp = a.fileSize - b.fileSize;
+      else if (sortBy === 'category') cmp = (a.category || '').localeCompare(b.category || '');
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return result;
+  }, [docs, filterSearch, filterCategory, sortBy, sortDir]);
+
+  function toggleSort(field: typeof sortBy) {
+    if (sortBy === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(field); setSortDir(field === 'date' ? 'desc' : 'asc'); }
+  }
 
   // Upload form state
-  const [uploadForm, setUploadForm] = useState({ title: '', description: '', category: '', tags: '' });
-  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [uploadShared, setUploadShared] = useState({ description: '', category: '', tags: '' });
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ done: 0, total: 0 });
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { loadDocs(); }, []);
+  useEffect(() => { loadDocs(); }, []); // fires after SettingsPage confirms auth
 
   async function loadDocs() {
     setLoading(true);
@@ -105,26 +164,47 @@ function DocumentsTab() {
     setTimeout(() => setStatus(null), 4000);
   }
 
+  function handleFilesChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files || []);
+    const entries: PendingFile[] = files.map(f => ({
+      file: f,
+      title: f.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim(),
+    }));
+    setPendingFiles(prev => [...prev, ...entries]);
+    e.target.value = '';
+  }
+
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
-    if (!uploadFile || !uploadForm.title.trim()) return flash('error', 'Title and file are required');
+    if (pendingFiles.length === 0) return flash('error', 'Select at least one file');
+    if (pendingFiles.some(f => !f.title.trim())) return flash('error', 'All files need a title');
     setUploading(true);
-    try {
-      const form = new FormData();
-      form.append('file', uploadFile);
-      form.append('title', uploadForm.title.trim());
-      if (uploadForm.description) form.append('description', uploadForm.description);
-      if (uploadForm.category) form.append('category', uploadForm.category);
-      if (uploadForm.tags) form.append('tags', JSON.stringify(uploadForm.tags.split(',').map(t => t.trim()).filter(Boolean)));
-      await apiUpload('/documents/upload', form);
-      setUploadForm({ title: '', description: '', category: '', tags: '' });
-      setUploadFile(null);
-      if (fileRef.current) fileRef.current.value = '';
-      flash('success', 'Document uploaded successfully');
-      loadDocs();
-    } catch (err: unknown) {
-      flash('error', err instanceof Error ? err.message : 'Upload failed');
-    } finally { setUploading(false); }
+    setUploadProgress({ done: 0, total: pendingFiles.length });
+    let failed = 0;
+    for (let i = 0; i < pendingFiles.length; i++) {
+      const { file, title } = pendingFiles[i];
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        form.append('title', title.trim());
+        if (uploadShared.description) form.append('description', uploadShared.description);
+        if (uploadShared.category) form.append('category', uploadShared.category);
+        if (uploadShared.tags) form.append('tags', uploadShared.tags.split(',').map(t => t.trim()).filter(Boolean).join(','));
+        await apiUpload('/documents/upload', form);
+        setUploadProgress({ done: i + 1, total: pendingFiles.length });
+      } catch { failed++; }
+    }
+    setPendingFiles([]);
+    setUploadShared({ description: '', category: '', tags: '' });
+    if (fileRef.current) fileRef.current.value = '';
+    flash(
+      failed === 0 ? 'success' : 'error',
+      failed === 0
+        ? `${pendingFiles.length} document${pendingFiles.length !== 1 ? 's' : ''} uploaded successfully`
+        : `${pendingFiles.length - failed} uploaded, ${failed} failed`,
+    );
+    setUploading(false);
+    loadDocs();
   }
 
   async function handleDelete(id: string, title: string) {
@@ -135,6 +215,16 @@ function DocumentsTab() {
       loadDocs();
     } catch (err: unknown) {
       flash('error', err instanceof Error ? err.message : 'Delete failed');
+    }
+  }
+
+  async function handleTranscribe(id: string, title: string) {
+    try {
+      await apiFetch(`/documents/${id}/transcribe`, { method: 'POST' });
+      flash('success', `"${title}" transcribed successfully`);
+      loadDocs();
+    } catch (err: unknown) {
+      flash('error', err instanceof Error ? err.message : 'Transcription failed');
     }
   }
 
@@ -151,7 +241,7 @@ function DocumentsTab() {
           title: editForm.title.trim(),
           description: editForm.description || undefined,
           category: editForm.category || undefined,
-          tags: editForm.tags.split(',').map(t => t.trim()).filter(Boolean),
+          tags: editForm.tags.split(',').map(t => t.trim()).filter(Boolean).join(','),
         }),
       });
       setEditingId(null);
@@ -168,30 +258,30 @@ function DocumentsTab() {
 
       {/* Upload */}
       <section className="bg-gray-900 border border-gray-800 rounded-xl p-6">
-        <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2"><Upload className="w-4 h-4 text-red-400" /> Upload Document</h2>
+        <h2 className="text-base font-semibold text-white mb-4 flex items-center gap-2"><Upload className="w-4 h-4 text-red-400" /> Upload Documents</h2>
         <form onSubmit={handleUpload} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs text-gray-400 mb-1 block">Title <span className="text-red-500">*</span></label>
-              <input
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
-                placeholder="Document title"
-                value={uploadForm.title}
-                onChange={e => setUploadForm(f => ({ ...f, title: e.target.value }))}
-              />
-            </div>
             <div>
               <label className="text-xs text-gray-400 mb-1 block">Category</label>
               <input
                 list="cat-list"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
                 placeholder="e.g. Policy, HR, Safety"
-                value={uploadForm.category}
-                onChange={e => setUploadForm(f => ({ ...f, category: e.target.value }))}
+                value={uploadShared.category}
+                onChange={e => setUploadShared(f => ({ ...f, category: e.target.value }))}
               />
               <datalist id="cat-list">
                 {categories.map(c => <option key={c} value={c} />)}
               </datalist>
+            </div>
+            <div>
+              <label className="text-xs text-gray-400 mb-1 block flex items-center gap-1"><Tag className="w-3 h-3" /> Tags <span className="text-gray-600">(comma separated)</span></label>
+              <input
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+                placeholder="e.g. handbook, onboarding"
+                value={uploadShared.tags}
+                onChange={e => setUploadShared(f => ({ ...f, tags: e.target.value }))}
+              />
             </div>
           </div>
           <div>
@@ -199,51 +289,121 @@ function DocumentsTab() {
             <textarea
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
               rows={2}
-              placeholder="Brief description (optional)"
-              value={uploadForm.description}
-              onChange={e => setUploadForm(f => ({ ...f, description: e.target.value }))}
+              placeholder="Brief description (optional, applied to all files)"
+              value={uploadShared.description}
+              onChange={e => setUploadShared(f => ({ ...f, description: e.target.value }))}
             />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs text-gray-400 mb-1 block flex items-center gap-1"><Tag className="w-3 h-3" /> Tags <span className="text-gray-600">(comma separated)</span></label>
-              <input
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
-                placeholder="e.g. handbook, onboarding"
-                value={uploadForm.tags}
-                onChange={e => setUploadForm(f => ({ ...f, tags: e.target.value }))}
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-400 mb-1 block">File <span className="text-red-500">*</span></label>
-              <input
-                ref={fileRef}
-                type="file"
-                className="w-full text-sm text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-red-600 file:text-white file:cursor-pointer hover:file:bg-red-700"
-                onChange={e => setUploadFile(e.target.files?.[0] ?? null)}
-              />
-            </div>
+          <div>
+            <label className="text-xs text-gray-400 mb-1 block">Files <span className="text-red-500">*</span> <span className="text-gray-600">(select one or more)</span></label>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="w-full text-sm text-gray-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-red-600 file:text-white file:cursor-pointer hover:file:bg-red-700"
+              onChange={handleFilesChange}
+            />
           </div>
-          <button
-            type="submit"
-            disabled={uploading}
-            className="px-5 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            {uploading ? 'Uploading…' : 'Upload'}
-          </button>
+          {pendingFiles.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs text-gray-400">{pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''} selected — edit titles if needed:</p>
+              {pendingFiles.map((pf, i) => (
+                <div key={i} className="flex items-center gap-2 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
+                  <FileIcon mime={pf.file.type} />
+                  <input
+                    value={pf.title}
+                    onChange={e => setPendingFiles(prev => prev.map((p, j) => j === i ? { ...p, title: e.target.value } : p))}
+                    className="flex-1 bg-transparent text-sm text-white focus:outline-none border-b border-gray-600 focus:border-red-500 pb-0.5"
+                    placeholder="Document title"
+                  />
+                  <span className="text-xs text-gray-500 flex-shrink-0">{formatBytes(pf.file.size)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setPendingFiles(prev => prev.filter((_, j) => j !== i))}
+                    className="p-0.5 text-gray-500 hover:text-red-400 transition-colors flex-shrink-0"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={uploading || pendingFiles.length === 0}
+              className="px-5 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {uploading
+                ? `Uploading ${uploadProgress.done}/${uploadProgress.total}…`
+                : pendingFiles.length > 1 ? `Upload ${pendingFiles.length} files` : 'Upload'}
+            </button>
+            {pendingFiles.length > 0 && !uploading && (
+              <button
+                type="button"
+                onClick={() => { setPendingFiles([]); if (fileRef.current) fileRef.current.value = ''; }}
+                className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                Clear all
+              </button>
+            )}
+          </div>
         </form>
       </section>
 
       {/* Document list */}
       <section>
-        <h2 className="text-base font-semibold text-white mb-3">All Documents <span className="text-gray-500 font-normal text-sm">({docs.length})</span></h2>
+        {/* Filter / Sort bar */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <div className="relative flex-1 min-w-48">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500 pointer-events-none" />
+            <input
+              value={filterSearch}
+              onChange={e => setFilterSearch(e.target.value)}
+              placeholder="Filter by title, tag, keyword…"
+              className="w-full pl-9 pr-8 py-1.5 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+            {filterSearch && (
+              <button onClick={() => setFilterSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white">
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+          <select
+            value={filterCategory}
+            onChange={e => setFilterCategory(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+          >
+            <option value="">All categories</option>
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <div className="flex items-center gap-1">
+            <ArrowUpDown className="w-3.5 h-3.5 text-gray-500 mr-0.5" />
+            {(['date', 'title', 'size', 'category'] as const).map(field => (
+              <button
+                key={field}
+                onClick={() => toggleSort(field)}
+                className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${sortBy === field ? 'bg-red-700 text-white' : 'bg-gray-800 text-gray-400 hover:text-white border border-gray-700'}`}
+              >
+                {field.charAt(0).toUpperCase() + field.slice(1)}
+                {sortBy === field && <span className="ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-gray-500 ml-auto whitespace-nowrap">
+            {visibleDocs.length}{visibleDocs.length !== docs.length ? `/${docs.length}` : ''} doc{docs.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+
         {loading ? (
           <p className="text-gray-500 text-sm">Loading…</p>
         ) : docs.length === 0 ? (
           <p className="text-gray-500 text-sm">No documents uploaded yet.</p>
+        ) : visibleDocs.length === 0 ? (
+          <p className="text-gray-500 text-sm">No documents match your filters.</p>
         ) : (
           <div className="space-y-2">
-            {docs.map(doc => (
+            {visibleDocs.map(doc => (
               <div key={doc.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
                 {editingId === doc.id ? (
                   <div className="p-4 space-y-3">
@@ -279,26 +439,78 @@ function DocumentsTab() {
                     </div>
                   </div>
                 ) : (
-                  <div className="p-4 flex items-start gap-3">
-                    <div className="mt-0.5 flex-shrink-0"><FileIcon mime={doc.mimeType} /></div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white">{doc.title}</p>
-                      {doc.description && <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">{doc.description}</p>}
-                      <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        {doc.category && <span className="px-2 py-0.5 bg-gray-800 text-gray-300 text-xs rounded-full border border-gray-700">{doc.category}</span>}
-                        {doc.tags.map(t => <span key={t} className="px-2 py-0.5 bg-red-950/40 text-red-300 text-xs rounded-full border border-red-900/50">{t}</span>)}
-                        <span className="text-xs text-gray-600">{formatBytes(doc.fileSize)}</span>
-                        <span className="text-xs text-gray-600">{new Date(doc.uploadedAt).toLocaleDateString()}</span>
+                  <div>
+                    <div className="p-4 flex items-start gap-3">
+                      <div className="mt-0.5 flex-shrink-0"><FileIcon mime={doc.mimeType} /></div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-white">
+                          {filterSearch
+                            ? <HighlightText text={doc.title} terms={[filterSearch]} />
+                            : doc.title}
+                        </p>
+                        {doc.description && (
+                          <p className="text-xs text-gray-400 mt-0.5 line-clamp-1">
+                            {filterSearch
+                              ? <HighlightText text={doc.description} terms={[filterSearch]} />
+                              : doc.description}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          {doc.category && <span className="px-2 py-0.5 bg-gray-800 text-gray-300 text-xs rounded-full border border-gray-700">{doc.category}</span>}
+                          {doc.tags.map(t => <span key={t} className="px-2 py-0.5 bg-red-950/40 text-red-300 text-xs rounded-full border border-red-900/50">{t}</span>)}
+                          {doc.keywords?.slice(0, 8).map(k => (
+                            <span key={k} className="px-2 py-0.5 bg-blue-950/40 text-blue-300 text-xs rounded-full border border-blue-900/50">{k}</span>
+                          ))}
+                          <span className="text-xs text-gray-600">{formatBytes(doc.fileSize)}</span>
+                          <span className="text-xs text-gray-600">{new Date(doc.uploadedAt).toLocaleDateString()}</span>
+                          {doc.transcribedAt && (
+                            <span className="text-xs text-green-600">✓ transcribed</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5 flex-shrink-0">
+                        <button onClick={() => startEdit(doc)} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700 transition-colors" title="Edit">
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        {doc.transcribedAt && (
+                          <button
+                            onClick={() => setViewingTranscriptionId(viewingTranscriptionId === doc.id ? null : doc.id)}
+                            className={`p-1.5 rounded-lg transition-colors ${viewingTranscriptionId === doc.id ? 'text-blue-400 bg-blue-950/40' : 'text-gray-400 hover:text-blue-400 hover:bg-blue-950/40'}`}
+                            title="View transcription"
+                          >
+                            {viewingTranscriptionId === doc.id ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                        {doc.mimeType === 'application/pdf' && (
+                          <button
+                            onClick={() => handleTranscribe(doc.id, doc.title)}
+                            className={`p-1.5 rounded-lg transition-colors ${doc.transcribedAt ? 'text-green-400 hover:text-green-300 hover:bg-green-950/40' : 'text-gray-400 hover:text-yellow-400 hover:bg-yellow-950/40'}`}
+                            title={doc.transcribedAt ? 'Re-transcribe PDF' : 'Transcribe PDF'}
+                          >
+                            <FileSearch className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(doc.id, doc.title)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-950/40 transition-colors" title="Delete">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex gap-1.5 flex-shrink-0">
-                      <button onClick={() => startEdit(doc)} className="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700 transition-colors" title="Edit">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => handleDelete(doc.id, doc.title)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-950/40 transition-colors" title="Delete">
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    {viewingTranscriptionId === doc.id && (
+                      <div className="border-t border-gray-800 px-4 pb-4 pt-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Transcription</p>
+                          {doc.keywords && doc.keywords.length > 0 && (
+                            <p className="text-xs text-yellow-600">Keywords highlighted in yellow</p>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-300 whitespace-pre-wrap break-words leading-relaxed max-h-80 overflow-y-auto bg-gray-950 rounded-lg p-3 border border-gray-800 font-mono">
+                          {doc.transcription?.trim()
+                            ? <HighlightText text={doc.transcription.trim()} terms={doc.keywords ?? []} />
+                            : <span className="text-gray-600 italic">No transcription text available.</span>
+                          }
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -537,7 +749,12 @@ export default function SettingsPage() {
 
   if (loading) return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">Loading…</div>;
 
-  if (user && !isAdmin(user)) {
+  if (!user) {
+    router.replace('/login');
+    return null;
+  }
+
+  if (!isAdmin(user)) {
     router.replace('/');
     return null;
   }
