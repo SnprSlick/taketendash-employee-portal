@@ -802,9 +802,314 @@ function CategoriesTab() {
   );
 }
 
+// ─── Data Validation Tab ──────────────────────────────────────────────────────
+
+interface DbSalesperson {
+  salesperson_id: string;
+  salesperson_name: string;
+  total_parts: number;
+  total_labor: number;
+  total_fet: number;
+  total_sell: number;
+  total_gp: number;
+}
+
+interface FileSalesperson {
+  mechId: string;
+  total_parts: number;
+  total_labor: number;
+  total_fet: number;
+  total_sell: number;
+}
+
+function deltaClass(delta: number): string {
+  const abs = Math.abs(delta);
+  if (abs < 1) return 'text-green-400';
+  if (abs < 50) return 'text-yellow-400';
+  return 'text-red-400';
+}
+
+function fmt$(n: number) {
+  return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+}
+
+function DeltaCell({ file, db }: { file: number; db: number }) {
+  const delta = db - file;
+  return (
+    <td className={`px-3 py-2 text-right text-xs font-mono ${deltaClass(delta)}`}>
+      {delta >= 0 ? '+' : ''}{fmt$(delta)}
+    </td>
+  );
+}
+
+function DataValidationTab() {
+  const [fileRows, setFileRows] = useState<FileSalesperson[]>([]);
+  const [dbRows, setDbRows] = useState<DbSalesperson[]>([]);
+  const [stores, setStores] = useState<{ id: string; name: string; code: string }[]>([]);
+  const [storeId, setStoreId] = useState('');
+  const [month, setMonth] = useState(() => String(new Date().getMonth() + 1));
+  const [year, setYear] = useState(() => String(new Date().getFullYear()));
+  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [compared, setCompared] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    apiFetch<{ id: string; name: string; code: string }[]>('/stores').then(s => {
+      const filtered = s.filter(st => st.code !== '1');
+      setStores(filtered);
+    }).catch(() => {});
+  }, []);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setStatus(null);
+    setFileRows([]);
+    setCompared(false);
+
+    try {
+      const { read, utils } = await import('xlsx');
+      const buf = await file.arrayBuffer();
+      const wb = read(buf, { type: 'array' });
+
+      // Find "Sales Data" sheet (or first sheet)
+      const sheetName = wb.SheetNames.find(n => /sales.?data/i.test(n)) || wb.SheetNames[0];
+      const ws = wb.Sheets[sheetName];
+      const json: Record<string, unknown>[] = utils.sheet_to_json(ws, { defval: 0 });
+
+      // Aggregate by MECH1
+      const map = new Map<string, FileSalesperson>();
+      for (const row of json) {
+        const mechId = String(row['MECH1'] ?? row['Mech1'] ?? row['mech1'] ?? '').trim();
+        if (!mechId) continue;
+        const qty = Number(row['QTY'] ?? row['Qty'] ?? 1) || 1;
+        const amount = Number(row['AMOUNT'] ?? row['Amount'] ?? 0);
+        const labor = Number(row['LABOR'] ?? row['Labor'] ?? 0);
+        const fetax = Number(row['FETAX'] ?? row['Fetax'] ?? row['FET'] ?? 0);
+        const parts = amount * qty;
+        const laborAmt = labor * qty;
+        const fetAmt = fetax * qty;
+
+        const existing = map.get(mechId) || { mechId, total_parts: 0, total_labor: 0, total_fet: 0, total_sell: 0 };
+        existing.total_parts += parts;
+        existing.total_labor += laborAmt;
+        existing.total_fet += fetAmt;
+        existing.total_sell += parts + laborAmt + fetAmt;
+        map.set(mechId, existing);
+      }
+
+      setFileRows(Array.from(map.values()).sort((a, b) => b.total_sell - a.total_sell));
+      setStatus({ type: 'success', msg: `Parsed ${json.length} rows from "${sheetName}" — ${map.size} salespersons found.` });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setStatus({ type: 'error', msg: `Failed to parse file: ${msg}` });
+    }
+
+    // reset input
+    if (fileRef.current) fileRef.current.value = '';
+  }
+
+  async function handleCompare() {
+    if (!month || !year) return;
+    setLoading(true);
+    setStatus(null);
+    try {
+      const params = new URLSearchParams({ month, year });
+      if (storeId) params.set('storeId', storeId);
+      const res = await apiFetch<{ success: boolean; data: DbSalesperson[] }>(
+        `/invoices/reports/salesperson-validation?${params}`
+      );
+      setDbRows(res.data);
+      setCompared(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      setStatus({ type: 'error', msg: `DB fetch failed: ${msg}` });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Merge file + db rows into unified comparison
+  const allMechIds = Array.from(new Set([
+    ...fileRows.map(r => r.mechId),
+    ...dbRows.map(r => r.salesperson_id),
+  ]));
+
+  const merged = allMechIds.map(id => {
+    const f = fileRows.find(r => r.mechId === id);
+    const d = dbRows.find(r => r.salesperson_id === id);
+    return { id, f, d };
+  }).sort((a, b) => {
+    const aTotal = (a.f?.total_sell ?? 0) + (a.d?.total_sell ?? 0);
+    const bTotal = (b.f?.total_sell ?? 0) + (b.d?.total_sell ?? 0);
+    return bTotal - aTotal;
+  });
+
+  const totalFileSell = fileRows.reduce((s, r) => s + r.total_sell, 0);
+  const totalDbSell = dbRows.reduce((s, r) => s + r.total_sell, 0);
+
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-base font-semibold text-white mb-1">Commission Data Validation</h2>
+        <p className="text-xs text-gray-500">Upload the TireMaster &quot;Outside Sales Commission Compare&quot; Excel file, then compare it against live DB totals.</p>
+      </div>
+
+      {/* Controls */}
+      <div className="flex flex-wrap gap-3 items-end">
+        {/* File upload */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1.5">Excel File</label>
+          <label className="flex items-center gap-2 cursor-pointer bg-gray-800 border border-gray-700 hover:border-red-500 rounded-lg px-4 py-2.5 text-sm text-gray-300 transition-colors">
+            <Upload className="w-4 h-4 text-red-400" />
+            {fileRows.length > 0 ? `${fileRows.length} salespersons loaded` : 'Upload .xlsx'}
+            <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
+          </label>
+        </div>
+
+        {/* Month */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1.5">Month</label>
+          <select
+            value={month}
+            onChange={e => setMonth(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500"
+          >
+            {MONTHS.map((m, i) => <option key={i + 1} value={String(i + 1)}>{m}</option>)}
+          </select>
+        </div>
+
+        {/* Year */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1.5">Year</label>
+          <select
+            value={year}
+            onChange={e => setYear(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500"
+          >
+            {[2024, 2025, 2026, 2027].map(y => <option key={y} value={String(y)}>{y}</option>)}
+          </select>
+        </div>
+
+        {/* Store */}
+        <div>
+          <label className="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1.5">Store</label>
+          <select
+            value={storeId}
+            onChange={e => setStoreId(e.target.value)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-red-500"
+          >
+            <option value="">All Stores</option>
+            {stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+
+        <button
+          onClick={handleCompare}
+          disabled={loading}
+          className="flex items-center gap-2 bg-red-600 hover:bg-red-500 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors"
+        >
+          {loading ? 'Loading…' : 'Compare'}
+        </button>
+      </div>
+
+      {status && <StatusBadge type={status.type} msg={status.msg} />}
+
+      {/* Summary totals */}
+      {compared && (
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: 'File Total Sell', val: totalFileSell, sub: `${fileRows.length} salespersons` },
+            { label: 'DB Total Sell', val: totalDbSell, sub: `${dbRows.length} salespersons` },
+            { label: 'Overall Δ', val: totalDbSell - totalFileSell, sub: 'DB minus File', delta: true },
+          ].map(({ label, val, sub, delta }) => (
+            <div key={label} className="bg-gray-900 border border-gray-800 rounded-xl p-4">
+              <p className="text-xs text-gray-500 uppercase tracking-widest mb-1">{label}</p>
+              <p className={`text-xl font-bold ${delta ? deltaClass(val) : 'text-white'}`}>
+                {delta && val > 0 ? '+' : ''}{fmt$(val)}
+              </p>
+              <p className="text-xs text-gray-600 mt-0.5">{sub}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Comparison table */}
+      {compared && merged.length > 0 && (
+        <div className="overflow-x-auto rounded-xl border border-gray-800">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-900 border-b border-gray-800">
+              <tr>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-400 uppercase tracking-widest">Salesperson</th>
+                <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-400 uppercase tracking-widest">TM ID</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-400">Parts (File)</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-400">Parts (DB)</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-400">Parts Δ</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-400">Labor (File)</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-400">Labor (DB)</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-400">Labor Δ</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-400">Total (File)</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-400">Total (DB)</th>
+                <th className="px-3 py-2.5 text-right text-xs font-semibold text-gray-400">Total Δ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800/60">
+              {merged.map(({ id, f, d }) => (
+                <tr key={id} className="hover:bg-gray-900/40">
+                  <td className="px-3 py-2 text-white font-medium text-xs">{d?.salesperson_name ?? '—'}</td>
+                  <td className="px-3 py-2 text-gray-400 font-mono text-xs">{id}</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs text-gray-300">{f ? fmt$(f.total_parts) : '—'}</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs text-gray-300">{d ? fmt$(d.total_parts) : '—'}</td>
+                  {f && d ? <DeltaCell file={f.total_parts} db={d.total_parts} /> : <td className="px-3 py-2 text-right text-xs text-gray-600">—</td>}
+                  <td className="px-3 py-2 text-right font-mono text-xs text-gray-300">{f ? fmt$(f.total_labor) : '—'}</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs text-gray-300">{d ? fmt$(d.total_labor) : '—'}</td>
+                  {f && d ? <DeltaCell file={f.total_labor} db={d.total_labor} /> : <td className="px-3 py-2 text-right text-xs text-gray-600">—</td>}
+                  <td className="px-3 py-2 text-right font-mono text-xs text-gray-300">{f ? fmt$(f.total_sell) : '—'}</td>
+                  <td className="px-3 py-2 text-right font-mono text-xs text-gray-300">{d ? fmt$(d.total_sell) : '—'}</td>
+                  {f && d ? <DeltaCell file={f.total_sell} db={d.total_sell} /> : <td className="px-3 py-2 text-right text-xs text-gray-600">—</td>}
+                </tr>
+              ))}
+            </tbody>
+            {/* Summary row */}
+            <tfoot className="bg-gray-900/60 border-t-2 border-gray-700">
+              <tr>
+                <td colSpan={2} className="px-3 py-2 text-xs font-bold text-gray-400 uppercase tracking-widest">TOTALS</td>
+                <td className="px-3 py-2 text-right font-mono text-xs font-bold text-white">{fmt$(fileRows.reduce((s, r) => s + r.total_parts, 0))}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs font-bold text-white">{fmt$(dbRows.reduce((s, r) => s + r.total_parts, 0))}</td>
+                <td className={`px-3 py-2 text-right text-xs font-bold font-mono ${deltaClass(dbRows.reduce((s, r) => s + r.total_parts, 0) - fileRows.reduce((s, r) => s + r.total_parts, 0))}`}>
+                  {(() => { const d = dbRows.reduce((s,r)=>s+r.total_parts,0) - fileRows.reduce((s,r)=>s+r.total_parts,0); return (d>=0?'+':'')+fmt$(d); })()}
+                </td>
+                <td className="px-3 py-2 text-right font-mono text-xs font-bold text-white">{fmt$(fileRows.reduce((s, r) => s + r.total_labor, 0))}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs font-bold text-white">{fmt$(dbRows.reduce((s, r) => s + r.total_labor, 0))}</td>
+                <td className={`px-3 py-2 text-right text-xs font-bold font-mono ${deltaClass(dbRows.reduce((s, r) => s + r.total_labor, 0) - fileRows.reduce((s, r) => s + r.total_labor, 0))}`}>
+                  {(() => { const d = dbRows.reduce((s,r)=>s+r.total_labor,0) - fileRows.reduce((s,r)=>s+r.total_labor,0); return (d>=0?'+':'')+fmt$(d); })()}
+                </td>
+                <td className="px-3 py-2 text-right font-mono text-xs font-bold text-white">{fmt$(totalFileSell)}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs font-bold text-white">{fmt$(totalDbSell)}</td>
+                <td className={`px-3 py-2 text-right text-xs font-bold font-mono ${deltaClass(totalDbSell - totalFileSell)}`}>
+                  {(() => { const d = totalDbSell - totalFileSell; return (d>=0?'+':'')+fmt$(d); })()}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {!compared && fileRows.length === 0 && (
+        <div className="rounded-xl border border-dashed border-gray-800 py-16 text-center">
+          <p className="text-gray-600 text-xs font-semibold uppercase tracking-widest">Upload a file and click Compare to see results</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'documents' | 'announcements' | 'categories';
+type Tab = 'documents' | 'announcements' | 'categories' | 'validation';
 
 export default function SettingsPage() {
   const { user, loading } = useAuth();
@@ -838,11 +1143,13 @@ export default function SettingsPage() {
           <TabButton active={tab === 'documents'} onClick={() => setTab('documents')}>📄 Documents</TabButton>
           <TabButton active={tab === 'announcements'} onClick={() => setTab('announcements')}>📢 Announcements</TabButton>
           <TabButton active={tab === 'categories'} onClick={() => setTab('categories')}>🗂 Categories</TabButton>
+          <TabButton active={tab === 'validation'} onClick={() => setTab('validation')}>✅ Data Validation</TabButton>
         </div>
 
         {tab === 'documents' && <DocumentsTab />}
         {tab === 'announcements' && <AnnouncementsTab />}
         {tab === 'categories' && <CategoriesTab />}
+        {tab === 'validation' && <DataValidationTab />}
       </main>
     </div>
   );
