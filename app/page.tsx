@@ -15,7 +15,7 @@ interface Announcement {
 interface Document {
   id: string; title: string; description?: string; category?: string;
   tags: string[]; keywords?: string[]; filename: string; mimeType: string;
-  fileSize: number; uploadedAt: string;
+  fileSize: number; uploadedAt: string; browserViewable?: boolean;
 }
 
 const XLSX_MIMES = [
@@ -24,8 +24,10 @@ const XLSX_MIMES = [
 ];
 
 function isXlsx(mime: string) { return XLSX_MIMES.includes(mime); }
-function canPreview(mime: string) {
-  return mime === 'application/pdf' || mime.startsWith('image/') || isXlsx(mime);
+function canPreview(doc: Document) {
+  if (doc.mimeType === 'application/pdf' || doc.mimeType.startsWith('image/')) return true;
+  if (isXlsx(doc.mimeType)) return !!doc.browserViewable;
+  return false;
 }
 
 function FileIcon({ mime, size = 'sm' }: { mime: string; size?: 'sm' | 'md' }) {
@@ -371,7 +373,7 @@ export default function HomePage() {
                 ) : (
                   <div className="grid gap-3">
                     {docs.map(doc => {
-                      const showPreview = canPreview(doc.mimeType);
+                      const showPreview = canPreview(doc);
                       return (
                         <div key={doc.id} className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start gap-4 hover:border-gray-600 transition-colors">
                           <div className="flex-shrink-0 mt-0.5 cursor-pointer" onClick={() => setViewerDoc(doc)}>

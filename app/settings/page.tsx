@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Upload, Trash2, Pencil, Pin, PinOff, Plus, X, Check, FileText, FileImage, File, Megaphone, Tag, FileSearch, Eye, EyeOff, Search, ArrowUpDown, FolderOpen,
+  Upload, Trash2, Pencil, Pin, PinOff, Plus, X, Check, FileText, FileImage, File, Megaphone, Tag, FileSearch, Eye, EyeOff, Search, ArrowUpDown, FolderOpen, Table2,
 } from 'lucide-react';
 import NavBar from '../components/NavBar';
 import { useAuth } from '../components/useAuth';
@@ -24,6 +24,7 @@ interface Document {
   uploadedAt: string;
   transcribedAt?: string | null;
   transcription?: string | null;
+  browserViewable?: boolean;
 }
 
 interface Announcement {
@@ -240,6 +241,18 @@ function DocumentsTab() {
       loadDocs();
     } catch (err: unknown) {
       flash('error', err instanceof Error ? err.message : 'Transcription failed');
+    }
+  }
+
+  async function handleToggleBrowserViewable(id: string, current: boolean) {
+    try {
+      await apiFetch(`/documents/${id}/browser-viewable`, {
+        method: 'POST',
+        body: JSON.stringify({ value: !current }),
+      });
+      setDocs(prev => prev.map(d => d.id === id ? { ...d, browserViewable: !current } : d));
+    } catch (err: unknown) {
+      flash('error', err instanceof Error ? err.message : 'Failed to update');
     }
   }
 
@@ -530,6 +543,15 @@ function DocumentsTab() {
                             title={doc.transcribedAt ? 'Re-transcribe PDF' : 'Transcribe PDF'}
                           >
                             <FileSearch className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {(doc.mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || doc.mimeType === 'application/vnd.ms-excel') && (
+                          <button
+                            onClick={() => handleToggleBrowserViewable(doc.id, !!doc.browserViewable)}
+                            className={`p-1.5 rounded-lg transition-colors ${doc.browserViewable ? 'text-green-400 bg-green-950/40 hover:text-red-400 hover:bg-red-950/40' : 'text-gray-400 hover:text-green-400 hover:bg-green-950/40'}`}
+                            title={doc.browserViewable ? 'Disable browser viewer' : 'Enable browser viewer'}
+                          >
+                            <Table2 className="w-3.5 h-3.5" />
                           </button>
                         )}
                         <button onClick={() => handleDelete(doc.id, doc.title)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-400 hover:bg-red-950/40 transition-colors" title="Delete">
