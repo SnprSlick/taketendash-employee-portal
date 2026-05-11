@@ -103,6 +103,13 @@ function DocumentsTab() {
   const [editForm, setEditForm] = useState({ title: '', description: '', category: '', tags: '' });
   const [viewingTranscriptionId, setViewingTranscriptionId] = useState<string | null>(null);
 
+  // Bulk selection state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkEditForm, setBulkEditForm] = useState({ category: '', tags: '' });
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkWorking, setBulkWorking] = useState(false);
+
   // Filter / sort state
   const [filterSearch, setFilterSearch] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
@@ -280,6 +287,59 @@ function DocumentsTab() {
     }
   }
 
+  function toggleSelect(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === visibleDocs.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(visibleDocs.map(d => d.id)));
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} document${selectedIds.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    setBulkWorking(true);
+    let failed = 0;
+    for (const id of Array.from(selectedIds)) {
+      try { await apiFetch(`/documents/${id}`, { method: 'DELETE' }); }
+      catch { failed++; }
+    }
+    setBulkWorking(false);
+    setSelectedIds(new Set());
+    setBulkMode(false);
+    flash(failed ? 'error' : 'success', failed ? `Deleted with ${failed} error(s)` : `${selectedIds.size} document${selectedIds.size !== 1 ? 's' : ''} deleted`);
+    loadDocs();
+  }
+
+  async function handleBulkEdit() {
+    if (selectedIds.size === 0) return;
+    setBulkWorking(true);
+    let failed = 0;
+    for (const id of Array.from(selectedIds)) {
+      try {
+        const body: Record<string, string> = {};
+        if (bulkEditForm.category.trim()) body.category = bulkEditForm.category.trim();
+        if (bulkEditForm.tags.trim()) body.tags = bulkEditForm.tags.trim();
+        await apiFetch(`/documents/${id}`, { method: 'POST', body: JSON.stringify(body) });
+      } catch { failed++; }
+    }
+    setBulkWorking(false);
+    setSelectedIds(new Set());
+    setBulkMode(false);
+    setShowBulkEdit(false);
+    setBulkEditForm({ category: '', tags: '' });
+    flash(failed ? 'error' : 'success', failed ? `Updated with ${failed} error(s)` : `${selectedIds.size} document${selectedIds.size !== 1 ? 's' : ''} updated`);
+    loadDocs();
+  }
+
   return (
     <div className="space-y-8">
       {status && <StatusBadge {...status} />}
@@ -445,10 +505,82 @@ function DocumentsTab() {
               </button>
             ))}
           </div>
-          <span className="text-xs text-gray-500 ml-auto whitespace-nowrap">
+          <span className="text-xs text-gray-500 whitespace-nowrap">
             {visibleDocs.length}{visibleDocs.length !== docs.length ? `/${docs.length}` : ''} doc{docs.length !== 1 ? 's' : ''}
           </span>
+          <button
+            onClick={() => { setBulkMode(m => !m); setSelectedIds(new Set()); setShowBulkEdit(false); }}
+            className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${bulkMode ? 'bg-red-700 border-red-600 text-white' : 'bg-gray-800 border-gray-700 text-gray-400 hover:text-white'}`}
+          >
+            {bulkMode ? 'Cancel' : 'Bulk Select'}
+          </button>
         </div>
+
+        {/* Bulk action toolbar */}
+        {bulkMode && (
+          <div className="flex flex-wrap items-center gap-2 mb-3 p-3 bg-gray-900 border border-gray-700 rounded-xl">
+            <input
+              type="checkbox"
+              checked={visibleDocs.length > 0 && selectedIds.size === visibleDocs.length}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 accent-red-500 cursor-pointer"
+            />
+            <span className="text-xs text-gray-400">{selectedIds.size} selected</span>
+            {selectedIds.size > 0 && (
+              <>
+                <button
+                  onClick={() => setShowBulkEdit(v => !v)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white text-xs rounded-lg transition-colors"
+                >
+                  <Pencil className="w-3 h-3" /> Bulk Edit
+                </button>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={bulkWorking}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <Trash2 className="w-3 h-3" /> Delete {selectedIds.size}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Bulk edit form */}
+        {bulkMode && showBulkEdit && selectedIds.size > 0 && (
+          <div className="mb-3 p-4 bg-gray-900 border border-blue-800 rounded-xl space-y-3">
+            <p className="text-xs text-blue-300 font-semibold">Apply to {selectedIds.size} selected document{selectedIds.size !== 1 ? 's' : ''} — leave blank to keep existing value</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Category</label>
+                <input
+                  list="cat-list"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                  placeholder="Override category…"
+                  value={bulkEditForm.category}
+                  onChange={e => setBulkEditForm(f => ({ ...f, category: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-400 mb-1 block">Tags (comma separated)</label>
+                <input
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                  placeholder="Override tags…"
+                  value={bulkEditForm.tags}
+                  onChange={e => setBulkEditForm(f => ({ ...f, tags: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handleBulkEdit} disabled={bulkWorking || (!bulkEditForm.category.trim() && !bulkEditForm.tags.trim())} className="flex items-center gap-1.5 px-3 py-1.5 bg-green-700 hover:bg-green-600 text-white text-xs rounded-lg transition-colors disabled:opacity-50">
+                <Check className="w-3 h-3" /> Apply
+              </button>
+              <button onClick={() => setShowBulkEdit(false)} className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded-lg transition-colors">
+                <X className="w-3 h-3" /> Cancel
+              </button>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           <p className="text-gray-500 text-sm">Loading…</p>
@@ -459,7 +591,7 @@ function DocumentsTab() {
         ) : (
           <div className="space-y-2">
             {visibleDocs.map(doc => (
-              <div key={doc.id} className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+              <div key={doc.id} className={`bg-gray-900 border rounded-xl overflow-hidden transition-colors ${bulkMode && selectedIds.has(doc.id) ? 'border-red-600' : 'border-gray-800'}`}>
                 {editingId === doc.id ? (
                   <div className="p-4 space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -496,6 +628,14 @@ function DocumentsTab() {
                 ) : (
                   <div>
                     <div className="p-4 flex items-start gap-3">
+                      {bulkMode && (
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(doc.id)}
+                          onChange={() => toggleSelect(doc.id)}
+                          className="mt-1 w-4 h-4 accent-red-500 cursor-pointer flex-shrink-0"
+                        />
+                      )}
                       <div className="mt-0.5 flex-shrink-0"><FileIcon mime={doc.mimeType} /></div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-white">
@@ -805,13 +945,16 @@ function CategoriesTab() {
 // ─── Data Validation Tab ──────────────────────────────────────────────────────
 
 interface DbSalesperson {
-  salesperson_id: string;
+  salesperson: string;
   salesperson_name: string;
+  site_no?: string;
+  store_name?: string;
   total_parts: number;
   total_labor: number;
   total_fet: number;
   total_sell: number;
   total_gp: number;
+  invoice_count?: number;
 }
 
 interface FileSalesperson {
@@ -933,12 +1076,12 @@ function DataValidationTab() {
   // Merge file + db rows into unified comparison
   const allMechIds = Array.from(new Set([
     ...fileRows.map(r => r.mechId),
-    ...dbRows.map(r => r.salesperson_id),
+    ...dbRows.map(r => r.salesperson),
   ]));
 
   const merged = allMechIds.map(id => {
     const f = fileRows.find(r => r.mechId === id);
-    const d = dbRows.find(r => r.salesperson_id === id);
+    const d = dbRows.find(r => r.salesperson === id);
     return { id, f, d };
   }).sort((a, b) => {
     const aTotal = (a.f?.total_sell ?? 0) + (a.d?.total_sell ?? 0);
