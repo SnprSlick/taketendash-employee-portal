@@ -32,10 +32,6 @@ export default function NavBar() {
 
   if (loading) return null;
 
-  const displayName = user?.firstName
-    ? `${user.firstName} ${user.lastName || ''}`.trim()
-    : user?.username;
-
   return (
     <header className="border-b border-gray-800 bg-gray-900 px-6 py-3 flex items-center gap-4 sticky top-0 z-40">
       {/* Logo */}
