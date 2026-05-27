@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { Settings, LogOut, Megaphone, Home, Calculator } from 'lucide-react';
+import { Settings, LogOut, Megaphone, Home, Calculator, LayoutDashboard } from 'lucide-react';
 import { useAuth } from './useAuth';
 import { clearAuth, isAdmin } from '../lib/api';
 
@@ -52,12 +52,16 @@ export default function NavBar() {
 
       {/* Right side */}
       <div className="ml-auto flex items-center gap-2">
-        {user && (
-          <span className="text-sm text-gray-400 hidden sm:block">
-            {displayName}
-            <span className="ml-1.5 text-xs text-gray-600 uppercase">({user.role})</span>
-          </span>
-        )}
+        <a
+          href="https://dash.taketentire.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white transition-colors"
+          title="Back to TakeTen Dashboard"
+        >
+          <LayoutDashboard className="w-4 h-4" />
+          <span className="hidden sm:inline">Dashboard</span>
+        </a>
 
         {user && isAdmin(user) && (
           <Link
