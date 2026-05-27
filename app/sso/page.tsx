@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { saveAuth, AuthUser } from '../lib/api';
 
 const BASE = (process.env.NEXT_PUBLIC_BACKEND_URL || '') + '/api/v1';
 
-export default function SSOPage() {
+function SSOHandler() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<'loading' | 'error'>('loading');
@@ -18,7 +18,6 @@ export default function SSOPage() {
       return;
     }
 
-    // Validate token and fetch user profile from the shared backend
     fetch(`${BASE}/auth/profile`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -26,7 +25,6 @@ export default function SSOPage() {
         if (!res.ok) throw new Error('Invalid token');
         const userRaw = await res.json();
 
-        // Normalize the profile response to AuthUser shape expected by the portal
         const user: AuthUser = {
           id: userRaw.id ?? userRaw.sub ?? '',
           username: userRaw.username ?? userRaw.email ?? '',
@@ -67,5 +65,19 @@ export default function SSOPage() {
         <p className="text-gray-400 text-sm mt-1">Transferring your session</p>
       </div>
     </div>
+  );
+}
+
+export default function SSOPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-red-600 animate-pulse">
+          <span className="text-white text-2xl font-bold">TT</span>
+        </div>
+      </div>
+    }>
+      <SSOHandler />
+    </Suspense>
   );
 }
