@@ -118,79 +118,62 @@ function CertCheckbox({
   );
 }
 
-// In-header production slider – appears when a tier is selected
-function HeaderSlider({
+// Commission slider component – placed above the tiers table
+function CommissionSlider({
   tier,
   value,
   onChange,
   onDismiss,
-  result,
 }: {
   tier: { min: number; max: number; rate: number };
   value: number;
   onChange: (v: number) => void;
   onDismiss: () => void;
-  result: ReturnType<typeof calcPay>;
 }) {
   const isInfinity = tier.max === Infinity;
-
-  // Infinity tier: show static commission at min value with + indicator, no slider
-  if (isInfinity) {
-    return (
-      <div className="mt-3 pt-3 border-t border-gray-800">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal className="w-3 h-3 text-red-400" />
-            <span className="text-xs text-gray-400">{fmt(tier.min)}+</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-green-400 font-semibold">{fmt(tier.min * tier.rate)} comm</span>
-            <span className="text-red-500 font-bold">{fmt(result.weeklyTotal)} total</span>
-            <button onClick={onDismiss} className="text-gray-500 hover:text-gray-300 transition-colors">
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const pct = ((value - tier.min) / (tier.max - tier.min)) * 100;
+  const sliderMax = isInfinity ? tier.min + 10000 : tier.max;
+  const pct = ((value - tier.min) / (sliderMax - tier.min)) * 100;
 
   return (
-    <div className="mt-3 pt-3 border-t border-gray-800 space-y-2">
-      <div className="flex items-center justify-between">
+    <div className="rounded-xl bg-gray-900 border border-red-500/40 p-4 sm:p-5 mb-4">
+      {/* Top row */}
+      <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <SlidersHorizontal className="w-3 h-3 text-red-400" />
-          <span className="text-xs text-gray-400">{fmt(tier.min)} – {fmt(tier.max)}</span>
+          <span className="text-xs font-semibold text-gray-300 uppercase tracking-widest">Commission Slider</span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-red-400">{fmt(value)}</span>
+          <span className="text-xs font-bold text-green-400">{fmt(value * tier.rate)}</span>
           <button onClick={onDismiss} className="text-gray-500 hover:text-gray-300 transition-colors">
             <X className="w-3 h-3" />
           </button>
         </div>
       </div>
+      {/* Track with draggable dot */}
       <div className="relative">
-        <div className="absolute inset-0 h-1.5 rounded-full bg-gray-800" />
+        <div className="h-1.5 rounded-full bg-gray-800" />
         <div
           className="absolute top-0 left-0 h-1.5 rounded-full bg-red-600 transition-all"
           style={{ width: `${pct}%` }}
         />
+        <div
+          className="absolute top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-red-500 border-2 border-white cursor-pointer shadow-lg z-10"
+          style={{ left: `calc(${pct}% - 10px)` }}
+        />
         <input
           type="range"
           min={tier.min}
-          max={tier.max}
+          max={sliderMax}
           step={50}
           value={value}
           onChange={e => onChange(parseInt(e.target.value))}
-          className="relative w-full h-1.5 opacity-0 cursor-pointer"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         />
       </div>
+      {/* Bottom row – production values */}
       <div className="flex justify-between text-xs">
-        <span className="text-green-400">{fmt(tier.min * tier.rate)} comm</span>
-        <span className="text-red-500 font-bold">{fmt(result.weeklyTotal)} total</span>
-        <span className="text-green-400">{fmt(tier.max * tier.rate)} comm</span>
+        <span className="text-gray-500">{fmt(tier.min)}</span>
+        <span className="text-gray-500">{isInfinity ? fmt(sliderMax) : fmt(tier.max)}</span>
       </div>
     </div>
   );
@@ -297,27 +280,18 @@ export default function CommissionPage() {
               </div>
             </div>
 
-            {/* Row 2: Commission breakdown */}
+            {/* Row 2: Commission breakdown with potential range */}
             {hasCommission(position) && (
               <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-800 text-xs">
                 <span className="text-gray-400">
                   <span className="text-white">{fmt(result.weeklyBasePay)}</span> weekly base
                   {' · '}
                   <span className="text-green-400">{fmt(result.weeklyCommission)}</span> comm ({(result.commissionRate * 100).toFixed(1)}%)
+                  {' · '}
+                  <span className="text-gray-500">potential: {fmt(tiers[0] ? tiers[0].min * tiers[0].rate : 0)} – {fmt(tiers.length > 0 && tiers[tiers.length - 1].max === Infinity ? tiers[tiers.length - 1].min * tiers[tiers.length - 1].rate : (tiers[tiers.length - 1]?.max ?? 0) * (tiers[tiers.length - 1]?.rate ?? 0))}+</span>
                 </span>
                 <span className="text-gray-500">@ {fmt(currentBilled)} production</span>
               </div>
-            )}
-
-            {/* Row 3: Production slider when a tier is active */}
-            {sliderTier !== null && hasCommission(position) && (
-              <HeaderSlider
-                tier={tiers[sliderTier]}
-                value={sliderValue}
-                onChange={setSliderValue}
-                onDismiss={deactivateSlider}
-                result={result}
-              />
             )}
           </div>
         )}
@@ -497,6 +471,15 @@ export default function CommissionPage() {
                                  [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                   </div>
+                )}
+                {/* Commission slider when a tier is active */}
+                {sliderTier !== null && result && (
+                  <CommissionSlider
+                    tier={tiers[sliderTier]}
+                    value={sliderValue}
+                    onChange={setSliderValue}
+                    onDismiss={deactivateSlider}
+                  />
                 )}
                 <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-x-auto">
                   <table className="w-full text-xs">
