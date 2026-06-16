@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, SlidersHorizontal, X } from 'lucide-react';
 import { useAuth } from '../components/useAuth';
 import NavBar from '../components/NavBar';
 import {
   Position,
   AddOnState,
-  CommissionResult,
   calcPay,
   hasCommission,
 } from '../lib/commission';
@@ -119,6 +118,84 @@ function CertCheckbox({
   );
 }
 
+// In-header production slider – appears when a tier is selected
+function HeaderSlider({
+  tier,
+  value,
+  onChange,
+  onDismiss,
+  result,
+}: {
+  tier: { min: number; max: number; rate: number };
+  value: number;
+  onChange: (v: number) => void;
+  onDismiss: () => void;
+  result: ReturnType<typeof calcPay>;
+}) {
+  const isInfinity = tier.max === Infinity;
+
+  // Infinity tier: show static commission at min value with + indicator, no slider
+  if (isInfinity) {
+    return (
+      <div className="mt-3 pt-3 border-t border-gray-800">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal className="w-3 h-3 text-red-400" />
+            <span className="text-xs text-gray-400">{fmt(tier.min)}+</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-green-400 font-semibold">{fmt(tier.min * tier.rate)} comm</span>
+            <span className="text-red-500 font-bold">{fmt(result.weeklyTotal)} total</span>
+            <button onClick={onDismiss} className="text-gray-500 hover:text-gray-300 transition-colors">
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const pct = ((value - tier.min) / (tier.max - tier.min)) * 100;
+
+  return (
+    <div className="mt-3 pt-3 border-t border-gray-800 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <SlidersHorizontal className="w-3 h-3 text-red-400" />
+          <span className="text-xs text-gray-400">{fmt(tier.min)} – {fmt(tier.max)}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-red-400">{fmt(value)}</span>
+          <button onClick={onDismiss} className="text-gray-500 hover:text-gray-300 transition-colors">
+            <X className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+      <div className="relative">
+        <div className="absolute inset-0 h-1.5 rounded-full bg-gray-800" />
+        <div
+          className="absolute top-0 left-0 h-1.5 rounded-full bg-red-600 transition-all"
+          style={{ width: `${pct}%` }}
+        />
+        <input
+          type="range"
+          min={tier.min}
+          max={tier.max}
+          step={50}
+          value={value}
+          onChange={e => onChange(parseInt(e.target.value))}
+          className="relative w-full h-1.5 opacity-0 cursor-pointer"
+        />
+      </div>
+      <div className="flex justify-between text-xs">
+        <span className="text-green-400">{fmt(tier.min * tier.rate)} comm</span>
+        <span className="text-red-500 font-bold">{fmt(result.weeklyTotal)} total</span>
+        <span className="text-green-400">{fmt(tier.max * tier.rate)} comm</span>
+      </div>
+    </div>
+  );
+}
+
 export default function CommissionPage() {
   const { user, loading: authLoading } = useAuth();
 
@@ -128,19 +205,30 @@ export default function CommissionPage() {
   const [addOns, setAddOns] = useState<AddOnState>(defaultAddOns);
   const [weeklyBilled, setWeeklyBilled] = useState('');
 
+  // Slider state
+  const [sliderTier, setSliderTier] = useState<number | null>(null);
+  const [sliderValue, setSliderValue] = useState(0);
+
   const updateAddOn = <K extends keyof AddOnState>(key: K, value: AddOnState[K]) => {
     setAddOns(prev => ({ ...prev, [key]: value }));
   };
 
   useEffect(() => {
-    if (position) setAddOns(defaultAddOns);
+    if (position) {
+      setAddOns(defaultAddOns);
+      setSliderTier(null);
+      setSliderValue(0);
+    }
   }, [position]);
 
-  const result: CommissionResult | null = useMemo(() => {
+  const currentBilled = sliderTier !== null
+    ? sliderValue
+    : (parseFloat(weeklyBilled) || 0);
+
+  const result = useMemo(() => {
     if (!position) return null;
-    const billed = parseFloat(weeklyBilled) || 0;
-    return calcPay(position, mechanicWithTools, addOns, billed);
-  }, [position, mechanicWithTools, addOns, weeklyBilled]);
+    return calcPay(position, mechanicWithTools, addOns, currentBilled);
+  }, [position, mechanicWithTools, addOns, currentBilled]);
 
   const showForklift = position === 'mechanic' || position === 'service-tech' || position === 'warehouse' || position === 'lube' || position === 'retail';
   const showSaturday = position === 'mechanic' || position === 'tire-tech' || position === 'service-tech' || position === 'lube' || (position === 'retail' && !retailIsManager);
@@ -156,6 +244,19 @@ export default function CommissionPage() {
   };
   const certInfo = position ? certLabels[position] : null;
 
+  const tiers = position === 'service-tech' ? SERVICE_TECH_TIERS : (position && hasCommission(position) ? NON_FLAG_TIERS : []);
+
+  function activateSlider(tierIdx: number) {
+    const t = tiers[tierIdx];
+    setSliderTier(tierIdx);
+    setSliderValue(t.min);
+  }
+
+  function deactivateSlider() {
+    setSliderTier(null);
+    setSliderValue(0);
+  }
+
   if (authLoading || !user) {
     return <div className="min-h-screen bg-gray-950" />;
   }
@@ -168,32 +269,56 @@ export default function CommissionPage() {
         <h1 className="text-xl font-bold text-white mb-1">Commission & Pay Calculator</h1>
         <p className="text-xs text-gray-500 uppercase tracking-widest mb-6">Build a pay offer for a prospective employee</p>
 
-        {/* Sticky Pay Summary - pure CSS sticky, no JS needed */}
+        {/* Sticky Pay Summary Header – ALL pay info consolidated here */}
         {position && result && (
-          <div className="sticky top-16 z-30 mb-6 rounded-xl bg-gray-900 border border-red-500/60 shadow-lg shadow-black/30 p-4 sm:p-5">
-            <div className="flex items-center justify-between gap-4">
+          <div className="sticky top-16 z-30 mb-6 rounded-xl bg-gray-900 border border-red-500/60 shadow-lg shadow-black/30 p-4 sm:p-5 space-y-3">
+            {/* Row 1: Hourly */}
+            <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-4 sm:gap-6">
                 <div className="text-center">
                   <div className="text-xs text-gray-500 uppercase tracking-widest">Base</div>
-                  <div className="text-sm sm:text-base font-semibold text-white">{fmtHourly(result.basePay)}/hr</div>
+                  <div className="text-sm font-semibold text-white">{fmtHourly(result.basePay)}/hr</div>
                 </div>
                 {result.addOnsPerHour > 0 && (
                   <div className="text-center">
                     <div className="text-xs text-gray-500 uppercase tracking-widest">Add-Ons</div>
-                    <div className="text-sm sm:text-base font-semibold text-green-400">+{fmtHourly(result.addOnsPerHour)}</div>
+                    <div className="text-sm font-semibold text-green-400">+{fmtHourly(result.addOnsPerHour)}</div>
                   </div>
                 )}
                 <div className="text-center">
                   <div className="text-xs text-gray-500 uppercase tracking-widest">Effective</div>
-                  <div className="text-sm sm:text-base font-bold text-white">{fmtHourly(result.effectiveHourly)}/hr</div>
+                  <div className="text-sm font-bold text-white">{fmtHourly(result.effectiveHourly)}/hr</div>
                 </div>
               </div>
-              <div className="border-l border-gray-800 pl-4 sm:pl-6">
+              <div className="border-l border-gray-800 pl-3 sm:pl-4 text-right">
                 <div className="text-xs text-gray-500 uppercase tracking-widest">Total Weekly</div>
                 <div className="text-red-500 font-black text-lg sm:text-xl">{fmt(result.weeklyTotal)}</div>
                 <div className="text-gray-500 text-xs">{fmt(result.annualized)}/yr</div>
               </div>
             </div>
+
+            {/* Row 2: Commission breakdown */}
+            {hasCommission(position) && (
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-gray-800 text-xs">
+                <span className="text-gray-400">
+                  <span className="text-white">{fmt(result.weeklyBasePay)}</span> weekly base
+                  {' · '}
+                  <span className="text-green-400">{fmt(result.weeklyCommission)}</span> comm ({(result.commissionRate * 100).toFixed(1)}%)
+                </span>
+                <span className="text-gray-500">@ {fmt(currentBilled)} production</span>
+              </div>
+            )}
+
+            {/* Row 3: Production slider when a tier is active */}
+            {sliderTier !== null && hasCommission(position) && (
+              <HeaderSlider
+                tier={tiers[sliderTier]}
+                value={sliderValue}
+                onChange={setSliderValue}
+                onDismiss={deactivateSlider}
+                result={result}
+              />
+            )}
           </div>
         )}
 
@@ -206,7 +331,12 @@ export default function CommissionPage() {
             <select
               className="w-full appearance-none bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 pr-10 font-semibold text-sm text-white focus:outline-none focus:border-red-500 cursor-pointer"
               value={position || ''}
-              onChange={e => { setPosition(e.target.value as Position); setWeeklyBilled(''); }}
+              onChange={e => {
+                setPosition(e.target.value as Position);
+                setWeeklyBilled('');
+                setSliderTier(null);
+                setSliderValue(0);
+              }}
             >
               <option value="" disabled>Select a position</option>
               {POSITIONS.map(p => (
@@ -341,115 +471,78 @@ export default function CommissionPage() {
               </div>
             </section>
 
-            {/* Weekly Production */}
+            {/* Commission Tiers Table */}
             {hasCommission(position) && (
               <section className="mb-6 sm:mb-8">
                 <label className="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
-                  Weekly Production
+                  Commission Tiers
                 </label>
-                <div className="flex items-center gap-3 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus-within:border-red-500 transition-colors">
-                  <span className="text-red-500 text-2xl font-black leading-none select-none">$</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="100"
-                    placeholder="0"
-                    value={weeklyBilled}
-                    onChange={e => setWeeklyBilled(e.target.value)}
-                    className="flex-1 bg-transparent text-xl font-bold text-white placeholder-gray-600 focus:outline-none
-                               [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
+                <p className="text-xs text-gray-500 mb-3">
                   {position === 'service-tech'
                     ? 'Total labor billed (commission starts at $7,000/week)'
                     : 'Total labor + parts billed (commission starts at $14,000/week)'}
                 </p>
-
-                <div className="mt-4 rounded-xl bg-gray-900 border border-gray-800 overflow-x-auto">
+                {sliderTier === null && (
+                  <div className="flex items-center gap-3 bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 focus-within:border-red-500 transition-colors mb-3">
+                    <span className="text-red-500 text-2xl font-black leading-none select-none">$</span>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="100"
+                      placeholder="0"
+                      value={weeklyBilled}
+                      onChange={e => setWeeklyBilled(e.target.value)}
+                      className="flex-1 bg-transparent text-xl font-bold text-white placeholder-gray-600 focus:outline-none
+                                 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  </div>
+                )}
+                <div className="rounded-xl bg-gray-900 border border-gray-800 overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-gray-500 border-b border-gray-800">
                         <th className="text-left py-2 px-3 sm:px-4 font-semibold">Production Range</th>
                         <th className="text-center py-2 px-2 font-semibold">Rate</th>
-                        <th className="text-right py-2 px-3 sm:px-4 font-semibold">Weekly Commission</th>
+                        <th className="text-right py-2 px-3 sm:px-4 font-semibold">Commission</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-800/50">
-                      {(position === 'service-tech' ? SERVICE_TECH_TIERS : NON_FLAG_TIERS).map((tier, i) => {
-                        const billedNum = parseFloat(weeklyBilled) || 0;
-                        const inRange = billedNum >= tier.min && billedNum <= tier.max;
+                      {tiers.map((tier, i) => {
+                        const isActive = sliderTier === i;
+                        const isCurrent = sliderTier === null && currentBilled >= tier.min && currentBilled <= tier.max;
+                        const isInfinity = tier.max === Infinity;
+                        const displayMax = isInfinity ? '+' : fmt(tier.max);
+                        const commAtMin = fmt(tier.min * tier.rate);
+                        const commAtMax = isInfinity
+                          ? '+'
+                          : fmt(tier.max * tier.rate);
                         return (
                           <tr
                             key={i}
                             className={`cursor-pointer transition-colors ${
-                              inRange ? 'bg-red-500/10' : 'hover:bg-gray-800'
+                              isActive
+                                ? 'bg-red-500/20'
+                                : isCurrent
+                                ? 'bg-red-500/10'
+                                : 'hover:bg-gray-800'
                             }`}
-                            onClick={() => setWeeklyBilled(String(tier.min))}
+                            onClick={() => activateSlider(i)}
                           >
-                            <td className={`py-2 px-3 sm:px-4 ${inRange ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
-                              {fmt(tier.min)} – {tier.max === Infinity ? '∞' : fmt(tier.max)}
+                            <td className={`py-2 px-3 sm:px-4 ${isActive ? 'text-red-300 font-bold' : isCurrent ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
+                              {fmt(tier.min)} – {displayMax}
                             </td>
-                            <td className={`py-2 px-2 text-center ${inRange ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
+                            <td className={`py-2 px-2 text-center ${isActive ? 'text-red-300 font-bold' : isCurrent ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
                               {(tier.rate * 100).toFixed(1)}%
                             </td>
-                            <td className={`py-2 px-3 sm:px-4 text-right ${inRange ? 'text-red-400 font-bold' : 'text-gray-600'}`}>
-                              {fmt((tier.min + (tier.max === Infinity ? tier.min : tier.max)) / 2 * tier.rate)}
+                            <td className={`py-2 px-3 sm:px-4 text-right ${isActive ? 'text-red-300 font-bold' : isCurrent ? 'text-red-400 font-bold' : 'text-gray-600'}`}>
+                              {commAtMin}{isInfinity ? '+' : ` – ${commAtMax}`}
                             </td>
                           </tr>
                         );
                       })}
                     </tbody>
                   </table>
-                </div>
-              </section>
-            )}
-
-            {/* Pay Summary */}
-            {result && (
-              <section className="mb-8 rounded-xl bg-gray-900 border border-red-500/40 p-4 sm:p-6">
-                <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">
-                  Pay Offer Summary
-                </h2>
-
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Base Rate</span>
-                    <span className="text-white font-semibold">{fmtHourly(result.basePay)}/hr</span>
-                  </div>
-                  {result.addOnsPerHour > 0 && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Add-Ons</span>
-                      <span className="text-green-400 font-semibold">+{fmtHourly(result.addOnsPerHour)}/hr</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between pt-2 border-t border-gray-800">
-                    <span className="text-gray-300 font-semibold">Effective Hourly</span>
-                    <span className="text-white font-bold">{fmtHourly(result.effectiveHourly)}/hr</span>
-                  </div>
-
-                  {hasCommission(position) && (
-                    <>
-                      <div className="flex justify-between pt-2 border-t border-gray-800">
-                        <span className="text-gray-400">Weekly Base Pay (40hr)</span>
-                        <span className="text-white font-semibold">{fmt(result.weeklyBasePay)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-400">Commission ({(result.commissionRate * 100).toFixed(1)}%)</span>
-                        <span className="text-green-400 font-semibold">{fmt(result.weeklyCommission)}</span>
-                      </div>
-                    </>
-                  )}
-
-                  <div className="flex justify-between pt-3 border-t border-gray-700">
-                    <span className="text-white font-bold text-lg">Total Weekly Pay</span>
-                    <span className="text-red-500 font-black text-lg">{fmt(result.weeklyTotal)}</span>
-                  </div>
-                  <div className="flex justify-between pt-1">
-                    <span className="text-gray-500 text-xs">Annualized</span>
-                    <span className="text-gray-400 text-xs font-semibold">{fmt(result.annualized)}/yr</span>
-                  </div>
                 </div>
               </section>
             )}
