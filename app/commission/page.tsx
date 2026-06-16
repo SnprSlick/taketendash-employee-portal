@@ -137,7 +137,7 @@ function CommissionSlider({
   return (
     <div className="rounded-xl bg-gray-900 border border-red-500/40 p-4 sm:p-5 mb-4">
       {/* Top row */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <SlidersHorizontal className="w-3 h-3 text-red-400" />
           <span className="text-xs font-semibold text-gray-300 uppercase tracking-widest">Commission Slider</span>
@@ -150,14 +150,14 @@ function CommissionSlider({
         </div>
       </div>
       {/* Track with draggable dot */}
-      <div className="relative">
-        <div className="h-1.5 rounded-full bg-gray-800" />
+      <div className="relative h-10 mb-3">
+        <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1.5 rounded-full bg-gray-800" />
         <div
-          className="absolute top-0 left-0 h-1.5 rounded-full bg-red-600 transition-all"
+          className="absolute top-1/2 -translate-y-1/2 left-0 h-1.5 rounded-full bg-red-600 transition-all"
           style={{ width: `${pct}%` }}
         />
         <div
-          className="absolute top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-red-500 border-2 border-white cursor-pointer shadow-lg z-10"
+          className="absolute top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-red-500 border-2 border-white cursor-grab active:cursor-grabbing shadow-lg z-10"
           style={{ left: `calc(${pct}% - 10px)` }}
         />
         <input
@@ -167,7 +167,7 @@ function CommissionSlider({
           step={50}
           value={value}
           onChange={e => onChange(parseInt(e.target.value))}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          className="absolute inset-0 w-full h-full opacity-0 cursor-grab active:cursor-grabbing"
         />
       </div>
       {/* Bottom row – production values */}
@@ -287,8 +287,18 @@ export default function CommissionPage() {
                   <span className="text-white">{fmt(result.weeklyBasePay)}</span> weekly base
                   {' · '}
                   <span className="text-green-400">{fmt(result.weeklyCommission)}</span> comm ({(result.commissionRate * 100).toFixed(1)}%)
-                  {' · '}
-                  <span className="text-gray-500">potential: {fmt(tiers[0] ? tiers[0].min * tiers[0].rate : 0)} – {fmt(tiers.length > 0 && tiers[tiers.length - 1].max === Infinity ? tiers[tiers.length - 1].min * tiers[tiers.length - 1].rate : (tiers[tiers.length - 1]?.max ?? 0) * (tiers[tiers.length - 1]?.rate ?? 0))}+</span>
+                  {sliderTier !== null && tiers[sliderTier] && (
+                    <>
+                      {' · '}
+                      <span className="text-gray-500">range: {fmt(tiers[sliderTier].min * tiers[sliderTier].rate)} – {tiers[sliderTier].max === Infinity ? fmt(sliderValue * tiers[sliderTier].rate) + ' +' : fmt(tiers[sliderTier].max * tiers[sliderTier].rate)}</span>
+                    </>
+                  )}
+                  {sliderTier === null && (
+                    <>
+                      {' · '}
+                      <span className="text-gray-500">potential: {fmt(tiers[0] ? tiers[0].min * tiers[0].rate : 0)} – {fmt(tiers.length > 0 && tiers[tiers.length - 1].max === Infinity ? tiers[tiers.length - 1].min * tiers[tiers.length - 1].rate : (tiers[tiers.length - 1]?.max ?? 0) * (tiers[tiers.length - 1]?.rate ?? 0))}+</span>
+                    </>
+                  )}
                 </span>
                 <span className="text-gray-500">@ {fmt(currentBilled)} production</span>
               </div>
