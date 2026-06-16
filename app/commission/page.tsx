@@ -249,7 +249,7 @@ export default function CommissionPage() {
       <NavBar />
 
       <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-10">
-        <h1 className="text-xl font-bold text-white mb-1">Commission & Pay Calculator</h1>
+        <h1 className="text-xl font-bold text-white mb-1">Pay Calculator</h1>
         <p className="text-xs text-gray-500 uppercase tracking-widest mb-6">Build a pay offer for a prospective employee</p>
 
         {/* Sticky Pay Summary Header – ALL pay info consolidated here */}
