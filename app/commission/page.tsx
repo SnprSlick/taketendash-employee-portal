@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useAuth } from '../components/useAuth';
 import NavBar from '../components/NavBar';
@@ -21,7 +21,6 @@ const POSITIONS: { key: Position; label: string }[] = [
   { key: 'retail', label: 'Retail' },
 ];
 
-// Commission tiers for display
 const SERVICE_TECH_TIERS: { min: number; max: number; rate: number }[] = [
   { min: 7000, max: 9999, rate: 0.04 },
   { min: 10000, max: 12499, rate: 0.05 },
@@ -133,25 +132,21 @@ export default function CommissionPage() {
     setAddOns(prev => ({ ...prev, [key]: value }));
   };
 
-  // Reset add-ons when position changes
   useEffect(() => {
     if (position) setAddOns(defaultAddOns);
   }, [position]);
 
-  // Commission result (computed)
   const result: CommissionResult | null = useMemo(() => {
     if (!position) return null;
     const billed = parseFloat(weeklyBilled) || 0;
     return calcPay(position, mechanicWithTools, addOns, billed);
   }, [position, mechanicWithTools, addOns, weeklyBilled]);
 
-  // Determine which add-ons to show based on position
   const showForklift = position === 'mechanic' || position === 'service-tech' || position === 'warehouse' || position === 'lube' || position === 'retail';
   const showSaturday = position === 'mechanic' || position === 'tire-tech' || position === 'service-tech' || position === 'lube' || (position === 'retail' && !retailIsManager);
   const showCdl = position === 'service-tech';
   const showAdded = position === 'service-tech';
 
-  // Position-specific cert label and max
   const certLabels: Record<string, { label: string; max: number }> = {
     'mechanic': { label: 'ASE or Similar', max: 5 },
     'tire-tech': { label: 'BG or Tire Vendor Certs', max: 2 },
@@ -160,21 +155,6 @@ export default function CommissionPage() {
     'retail': { label: 'BG or Tire Vendor', max: 2 },
   };
   const certInfo = position ? certLabels[position] : null;
-
-  // Sticky header logic
-  const headerRef = useRef<HTMLDivElement>(null);
-  const [isSticky, setIsSticky] = useState(false);
-
-  useEffect(() => {
-    const el = headerRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setIsSticky(!entry.isIntersecting),
-      { threshold: 0, rootMargin: '-80px 0px 0px 0px' }
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
 
   if (authLoading || !user) {
     return <div className="min-h-screen bg-gray-950" />;
@@ -188,12 +168,9 @@ export default function CommissionPage() {
         <h1 className="text-xl font-bold text-white mb-1">Commission & Pay Calculator</h1>
         <p className="text-xs text-gray-500 uppercase tracking-widest mb-6">Build a pay offer for a prospective employee</p>
 
-        {/* Sticky Pay Summary Header */}
+        {/* Sticky Pay Summary - pure CSS sticky, no JS needed */}
         {position && result && (
-          <div ref={headerRef} className={`mb-6 rounded-xl bg-gray-900 border ${
-            isSticky ? 'border-red-500/60 sticky top-0 md:top-14 z-30 shadow-lg shadow-black/30' : 'border-red-500/40'
-          } p-4 sm:p-5`}
-          >
+          <div className="sticky top-16 z-30 mb-6 rounded-xl bg-gray-900 border border-red-500/60 shadow-lg shadow-black/30 p-4 sm:p-5">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-4 sm:gap-6">
                 <div className="text-center">
@@ -286,7 +263,6 @@ export default function CommissionPage() {
                 Certifications & Add-Ons
               </h2>
 
-              {/* Number inputs grouped */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                 {certInfo && certInfo.max > 0 && (
                   <CertNumberInput
@@ -315,7 +291,6 @@ export default function CommissionPage() {
                 )}
               </div>
 
-              {/* Checkboxes grouped */}
               <div className="mt-4 pt-4 border-t border-gray-800">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                   <CertCheckbox
@@ -366,7 +341,7 @@ export default function CommissionPage() {
               </div>
             </section>
 
-            {/* Weekly Production (commission roles only) */}
+            {/* Weekly Production */}
             {hasCommission(position) && (
               <section className="mb-6 sm:mb-8">
                 <label className="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
@@ -392,7 +367,6 @@ export default function CommissionPage() {
                     : 'Total labor + parts billed (commission starts at $14,000/week)'}
                 </p>
 
-                {/* Tier reference */}
                 <div className="mt-4 rounded-xl bg-gray-900 border border-gray-800 overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
@@ -410,9 +384,7 @@ export default function CommissionPage() {
                           <tr
                             key={i}
                             className={`cursor-pointer transition-colors ${
-                              inRange
-                                ? 'bg-red-500/10'
-                                : 'hover:bg-gray-800'
+                              inRange ? 'bg-red-500/10' : 'hover:bg-gray-800'
                             }`}
                             onClick={() => setWeeklyBilled(String(tier.min))}
                           >
