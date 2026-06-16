@@ -21,11 +21,23 @@ const POSITIONS: { key: Position; label: string }[] = [
   { key: 'retail', label: 'Retail' },
 ];
 
-const VENDOR_CERT_MAXS: Record<string, number> = {
-  'mechanic': 5,
-  'tire-tech': 2,
-  'service-tech': 5,
-};
+// Commission tiers for display
+const SERVICE_TECH_TIERS: { min: number; max: number; rate: number }[] = [
+  { min: 7000, max: 9999, rate: 0.04 },
+  { min: 10000, max: 12499, rate: 0.05 },
+  { min: 12500, max: 14999, rate: 0.06 },
+  { min: 15000, max: 19999, rate: 0.07 },
+  { min: 20000, max: Infinity, rate: 0.085 },
+];
+
+const NON_FLAG_TIERS: { min: number; max: number; rate: number }[] = [
+  { min: 14000, max: 15999, rate: 0.02 },
+  { min: 16000, max: 17999, rate: 0.03 },
+  { min: 18000, max: 21999, rate: 0.04 },
+  { min: 22000, max: 23999, rate: 0.05 },
+  { min: 24000, max: 27999, rate: 0.06 },
+  { min: 28000, max: Infinity, rate: 0.07 },
+];
 
 const defaultAddOns: AddOnState = {
   vendorCerts: 0,
@@ -140,6 +152,7 @@ export default function CommissionPage() {
   const showSaturday = position === 'mechanic' || position === 'tire-tech' || position === 'service-tech' || position === 'lube' || (position === 'retail' && !retailIsManager);
   const showCdl = position === 'service-tech';
   const showAdded = position === 'service-tech';
+  const vendorMax = position === 'mechanic' ? 5 : position === 'tire-tech' ? 2 : 5;
 
   if (authLoading || !user) {
     return <div className="min-h-screen bg-gray-950" />;
@@ -219,19 +232,20 @@ export default function CommissionPage() {
                 Certifications & Add-Ons
               </h2>
 
-              <div className="space-y-4">
+              {/* Number inputs grouped */}
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                 {showVendorCerts && (
                   <CertNumberInput
-                    label="ASE / BG / Tire Vendor Certs"
+                    label="ASE / BG / Vendor Certs"
                     value={addOns.vendorCerts}
-                    max={VENDOR_CERT_MAXS[position]}
+                    max={vendorMax}
                     perUnit="$0.25/hr each"
                     onChange={v => updateAddOn('vendorCerts', v)}
                   />
                 )}
                 {showEntryBG && (
                   <CertNumberInput
-                    label="Entry Level BG Certs"
+                    label="Entry Level BG"
                     value={addOns.entryLevelBGCerts}
                     max={2}
                     perUnit="$0.25/hr each"
@@ -240,71 +254,71 @@ export default function CommissionPage() {
                 )}
                 {showEntryASE && (
                   <CertNumberInput
-                    label="Entry Level ASE Certs"
+                    label="Entry Level ASE"
                     value={addOns.entryLevelASE}
                     max={2}
                     perUnit="$0.25/hr each"
                     onChange={v => updateAddOn('entryLevelASE', v)}
                   />
                 )}
-
-                <CertCheckbox
-                  label="MSHA Certification"
-                  value={addOns.msha}
-                  perUnit="$0.50/hr"
-                  onChange={v => updateAddOn('msha', v)}
-                />
-                {showForklift && (
-                  <CertCheckbox
-                    label="Forklift Certification"
-                    value={addOns.forklift}
-                    perUnit="$0.25/hr"
-                    onChange={v => updateAddOn('forklift', v)}
-                  />
-                )}
-
                 <CertNumberInput
-                  label="Past Professional Experience"
+                  label="Years Experience"
                   value={addOns.pastExperienceYears}
                   max={12}
-                  perUnit="$0.50/hr per 3 years (max 12yr / $2.00)"
+                  perUnit="$0.50/3yr"
                   onChange={v => updateAddOn('pastExperienceYears', v)}
                 />
-
-                {showSaturday && (
-                  <CertCheckbox
-                    label="Saturday Rotation"
-                    value={addOns.saturdayRotation}
-                    perUnit="$0.15/hr"
-                    onChange={v => updateAddOn('saturdayRotation', v)}
-                  />
-                )}
-
-                <CertCheckbox
-                  label="Commitment Bonus (6+ years)"
-                  value={addOns.commitmentBonus}
-                  perUnit="$0.25/hr"
-                  onChange={v => updateAddOn('commitmentBonus', v)}
-                />
-
-                {showCdl && (
-                  <CertCheckbox
-                    label="CDL / LgOTR"
-                    value={addOns.cdl}
-                    perUnit="$1.75/hr"
-                    onChange={v => updateAddOn('cdl', v)}
-                  />
-                )}
-
                 {showAdded && (
                   <CertNumberInput
-                    label="ADDED Program (after-hours calls/week)"
+                    label="ADDED Calls/Week"
                     value={addOns.addedCallsPerWeek}
                     max={0}
                     perUnit="$30/call"
                     onChange={v => updateAddOn('addedCallsPerWeek', v)}
                   />
                 )}
+              </div>
+
+              {/* Checkboxes grouped */}
+              <div className="mt-4 pt-4 border-t border-gray-800">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                  <CertCheckbox
+                    label="MSHA"
+                    value={addOns.msha}
+                    perUnit="$0.50/hr"
+                    onChange={v => updateAddOn('msha', v)}
+                  />
+                  {showForklift && (
+                    <CertCheckbox
+                      label="Forklift"
+                      value={addOns.forklift}
+                      perUnit="$0.25/hr"
+                      onChange={v => updateAddOn('forklift', v)}
+                    />
+                  )}
+                  {showSaturday && (
+                    <CertCheckbox
+                      label="Saturday"
+                      value={addOns.saturdayRotation}
+                      perUnit="$0.15/hr"
+                      onChange={v => updateAddOn('saturdayRotation', v)}
+                    />
+                  )}
+                  <CertCheckbox
+                    label="Commitment"
+                    value={addOns.commitmentBonus}
+                    perUnit="$0.25/hr"
+                    onChange={v => updateAddOn('commitmentBonus', v)}
+                  />
+                  {showCdl && (
+                    <CertCheckbox
+                      label="CDL / LgOTR"
+                      value={addOns.cdl}
+                      perUnit="$1.75/hr"
+                      onChange={v => updateAddOn('cdl', v)}
+                    />
+                  )}
+                </div>
               </div>
             </section>
 
@@ -333,6 +347,46 @@ export default function CommissionPage() {
                     ? 'Total labor billed (commission starts at $7,000/week)'
                     : 'Total labor + parts billed (commission starts at $14,000/week)'}
                 </p>
+
+                {/* Tier reference */}
+                <div className="mt-4 rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-gray-500 border-b border-gray-800">
+                        <th className="text-left py-2 px-4 font-semibold">Production Range</th>
+                        <th className="text-center py-2 font-semibold">Rate</th>
+                        <th className="text-right py-2 font-semibold">Weekly Commission</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800/50">
+                      {(position === 'service-tech' ? SERVICE_TECH_TIERS : NON_FLAG_TIERS).map((tier, i) => {
+                        const billedNum = parseFloat(weeklyBilled) || 0;
+                        const inRange = billedNum >= tier.min && billedNum <= tier.max;
+                        return (
+                          <tr
+                            key={i}
+                            className={`cursor-pointer transition-colors ${
+                              inRange
+                                ? 'bg-red-500/10'
+                                : 'hover:bg-gray-800'
+                            }`}
+                            onClick={() => setWeeklyBilled(String(tier.min))}
+                          >
+                            <td className={`py-2 px-4 ${inRange ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
+                              {fmt(tier.min)} – {tier.max === Infinity ? '∞' : fmt(tier.max)}
+                            </td>
+                            <td className={`py-2 text-center ${inRange ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
+                              {(tier.rate * 100).toFixed(1)}%
+                            </td>
+                            <td className={`py-2 text-right ${inRange ? 'text-red-400 font-bold' : 'text-gray-600'}`}>
+                              {fmt((tier.min + (tier.max === Infinity ? tier.min : tier.max)) / 2 * tier.rate)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </section>
             )}
 
