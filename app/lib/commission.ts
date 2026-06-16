@@ -32,7 +32,7 @@ const BASE_PAY: Record<string, number> = {
   'mechanic-no-tools': 18,
   'tire-tech': 18,
   'service-tech': 18,
-  'warehouse': 18,
+  'warehouse': 16,
   'lube': 14,
   'retail': 18,
 };
