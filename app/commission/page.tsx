@@ -50,6 +50,7 @@ const defaultAddOns: AddOnState = {
   commitmentBonus: false,
   cdl: false,
   addedCallsPerWeek: 0,
+  retreadCert: false,
 };
 
 function fmt(n: number): string {
@@ -145,14 +146,20 @@ export default function CommissionPage() {
   }, [position, mechanicWithTools, addOns, weeklyBilled]);
 
   // Determine which add-ons to show based on position
-  const showVendorCerts = position === 'mechanic' || position === 'tire-tech' || position === 'service-tech';
-  const showEntryBG = position === 'tire-tech';
-  const showEntryASE = position === 'lube';
   const showForklift = position === 'mechanic' || position === 'service-tech' || position === 'warehouse' || position === 'lube' || position === 'retail';
   const showSaturday = position === 'mechanic' || position === 'tire-tech' || position === 'service-tech' || position === 'lube' || (position === 'retail' && !retailIsManager);
   const showCdl = position === 'service-tech';
   const showAdded = position === 'service-tech';
-  const vendorMax = position === 'mechanic' ? 5 : position === 'tire-tech' ? 2 : 5;
+
+  // Position-specific cert label and max
+  const certLabels: Record<string, { label: string; max: number }> = {
+    'mechanic': { label: 'ASE or Similar', max: 5 },
+    'tire-tech': { label: 'BG or Tire Vendor Certs', max: 2 },
+    'service-tech': { label: 'BG/TIA/MAC', max: 3 },
+    'lube': { label: 'Entry Level ASE or BG', max: 2 },
+    'retail': { label: 'BG or Tire Vendor', max: 2 },
+  };
+  const certInfo = position ? certLabels[position] : null;
 
   // Sticky header logic
   const headerRef = useRef<HTMLDivElement>(null);
@@ -184,7 +191,7 @@ export default function CommissionPage() {
         {/* Sticky Pay Summary Header */}
         {position && result && (
           <div ref={headerRef} className={`mb-6 rounded-xl bg-gray-900 border ${
-            isSticky ? 'border-red-500/60 sticky top-14 z-30 shadow-lg shadow-black/30' : 'border-red-500/40'
+            isSticky ? 'border-red-500/60 sticky top-0 md:top-14 z-30 shadow-lg shadow-black/30' : 'border-red-500/40'
           } p-4 sm:p-5`}
           >
             <div className="flex items-center justify-between gap-4">
@@ -281,31 +288,13 @@ export default function CommissionPage() {
 
               {/* Number inputs grouped */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
-                {showVendorCerts && (
+                {certInfo && certInfo.max > 0 && (
                   <CertNumberInput
-                    label="ASE / BG / Vendor Certs"
+                    label={certInfo.label}
                     value={addOns.vendorCerts}
-                    max={vendorMax}
+                    max={certInfo.max}
                     perUnit="$0.25/hr each"
                     onChange={v => updateAddOn('vendorCerts', v)}
-                  />
-                )}
-                {showEntryBG && (
-                  <CertNumberInput
-                    label="Entry Level BG"
-                    value={addOns.entryLevelBGCerts}
-                    max={2}
-                    perUnit="$0.25/hr each"
-                    onChange={v => updateAddOn('entryLevelBGCerts', v)}
-                  />
-                )}
-                {showEntryASE && (
-                  <CertNumberInput
-                    label="Entry Level ASE"
-                    value={addOns.entryLevelASE}
-                    max={2}
-                    perUnit="$0.25/hr each"
-                    onChange={v => updateAddOn('entryLevelASE', v)}
                   />
                 )}
                 <CertNumberInput
@@ -341,6 +330,14 @@ export default function CommissionPage() {
                       value={addOns.forklift}
                       perUnit="$0.25/hr"
                       onChange={v => updateAddOn('forklift', v)}
+                    />
+                  )}
+                  {position === 'warehouse' && (
+                    <CertCheckbox
+                      label="Retread Cert"
+                      value={addOns.retreadCert}
+                      perUnit="$1.00/hr"
+                      onChange={v => updateAddOn('retreadCert', v)}
                     />
                   )}
                   {showSaturday && (

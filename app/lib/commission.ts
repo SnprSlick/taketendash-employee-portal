@@ -3,16 +3,17 @@
 export type Position = 'mechanic' | 'tire-tech' | 'service-tech' | 'warehouse' | 'lube' | 'retail';
 
 export interface AddOnState {
-  vendorCerts: number;        // 0–max depending on position
-  entryLevelBGCerts: number;  // 0–2 (Tire Tech only)
-  entryLevelASE: number;      // 0–2 (Lube only)
+  vendorCerts: number;        // position-specific main cert count
+  entryLevelBGCerts: number;  // kept for backward compat, unused now
+  entryLevelASE: number;      // kept for backward compat, unused now
   msha: boolean;
   forklift: boolean;
-  pastExperienceYears: number; // 0–12
+  pastExperienceYears: number;
   saturdayRotation: boolean;
   commitmentBonus: boolean;
-  cdl: boolean;               // Service Tech only
-  addedCallsPerWeek: number;  // Service Tech only
+  cdl: boolean;
+  addedCallsPerWeek: number;
+  retreadCert: boolean;       // Warehouse only, $1.00/hr
 }
 
 export interface CommissionResult {
@@ -54,6 +55,15 @@ const NON_FLAG_TIERS: [number, number][] = [
   [28000, 0.07],
 ];
 
+// Position-specific main cert maxes
+const CERT_MAXS: Record<string, number> = {
+  'mechanic': 5,
+  'tire-tech': 2,
+  'service-tech': 3,
+  'lube': 2,
+  'retail': 2,
+};
+
 export function getCommissionRate(position: Position, weeklyBilled: number): number {
   if (position === 'service-tech') {
     for (let i = SERVICE_TECH_TIERS.length - 1; i >= 0; i--) {
@@ -77,20 +87,14 @@ export function hasCommission(position: Position): boolean {
 export function calcAddOnsPerHour(position: Position, addOns: AddOnState): number {
   let total = 0;
 
-  // Vendor certs (position-specific max)
-  if (position === 'mechanic') total += Math.min(addOns.vendorCerts, 5) * 0.25;
-  if (position === 'tire-tech') total += Math.min(addOns.vendorCerts, 2) * 0.25;
-  if (position === 'service-tech') total += Math.min(addOns.vendorCerts, 5) * 0.25;
-
-  // Entry level BG (Tire Tech only)
-  if (position === 'tire-tech') {
-    total += Math.min(addOns.entryLevelBGCerts, 2) * 0.25;
+  // Position-specific main cert (all use vendorCerts with position-specific max)
+  const maxCerts = CERT_MAXS[position];
+  if (maxCerts !== undefined) {
+    total += Math.min(addOns.vendorCerts, maxCerts) * 0.25;
   }
 
-  // Entry level ASE (Lube only)
-  if (position === 'lube') {
-    total += Math.min(addOns.entryLevelASE, 2) * 0.25;
-  }
+  // Retread Cert (Warehouse only, $1.00 flat)
+  if (position === 'warehouse' && addOns.retreadCert) total += 1.00;
 
   // Flat checkboxes
   if (addOns.msha) total += 0.50;
