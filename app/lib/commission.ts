@@ -130,13 +130,13 @@ export function calcPay(
   let weeklyCommission = 0;
   if (hasCommission(position)) {
     commissionRate = getCommissionRate(position, weeklyBilled);
-    weeklyCommission = weeklyBilled * commissionRate;
+    weeklyCommission = Math.round(weeklyBilled * commissionRate * 100) / 100;
   }
 
   const addedWeekly = calcAddedProgramWeekly(addOns);
 
-  const weeklyTotal = weeklyBasePay + weeklyCommission + addedWeekly;
-  const annualized = weeklyTotal * 52;
+  const weeklyTotal = Math.round((weeklyBasePay + weeklyCommission + addedWeekly) * 100) / 100;
+  const annualized = Math.round(weeklyTotal * 52 * 100) / 100;
 
   return {
     basePay,
