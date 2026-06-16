@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useAuth } from '../components/useAuth';
 import NavBar from '../components/NavBar';
@@ -98,11 +98,15 @@ function CertCheckbox({
   label: string; value: boolean; perUnit: string; onChange: (v: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-3">
+    <div className="flex items-center">
+      <div className="flex-1">
+        <div className="text-sm text-gray-300">{label}</div>
+        <div className="text-xs text-gray-500">{perUnit}</div>
+      </div>
+      <div className="ml-4 shrink-0">
         <button
           onClick={() => onChange(!value)}
-          className={`w-5 h-5 rounded flex items-center justify-center border transition-colors ${
+          className={`w-6 h-6 rounded flex items-center justify-center border transition-colors ${
             value
               ? 'bg-red-600 border-red-600'
               : 'bg-gray-800 border-gray-700 hover:border-gray-600'
@@ -110,10 +114,6 @@ function CertCheckbox({
         >
           {value && <span className="text-white text-xs">✓</span>}
         </button>
-        <div>
-          <div className="text-sm text-gray-300">{label}</div>
-          <div className="text-xs text-gray-500">{perUnit}</div>
-        </div>
       </div>
     </div>
   );
@@ -154,6 +154,21 @@ export default function CommissionPage() {
   const showAdded = position === 'service-tech';
   const vendorMax = position === 'mechanic' ? 5 : position === 'tire-tech' ? 2 : 5;
 
+  // Sticky header logic
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [isSticky, setIsSticky] = useState(false);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsSticky(!entry.isIntersecting),
+      { threshold: 0, rootMargin: '-80px 0px 0px 0px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   if (authLoading || !user) {
     return <div className="min-h-screen bg-gray-950" />;
   }
@@ -162,12 +177,44 @@ export default function CommissionPage() {
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
       <NavBar />
 
-      <main className="flex-1 max-w-2xl mx-auto w-full px-6 py-10">
+      <main className="flex-1 max-w-4xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-10">
         <h1 className="text-xl font-bold text-white mb-1">Commission & Pay Calculator</h1>
         <p className="text-xs text-gray-500 uppercase tracking-widest mb-6">Build a pay offer for a prospective employee</p>
 
+        {/* Sticky Pay Summary Header */}
+        {position && result && (
+          <div ref={headerRef} className={`mb-6 rounded-xl bg-gray-900 border ${
+            isSticky ? 'border-red-500/60 sticky top-14 z-30 shadow-lg shadow-black/30' : 'border-red-500/40'
+          } p-4 sm:p-5`}
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-4 sm:gap-6">
+                <div className="text-center">
+                  <div className="text-xs text-gray-500 uppercase tracking-widest">Base</div>
+                  <div className="text-sm sm:text-base font-semibold text-white">{fmtHourly(result.basePay)}/hr</div>
+                </div>
+                {result.addOnsPerHour > 0 && (
+                  <div className="text-center">
+                    <div className="text-xs text-gray-500 uppercase tracking-widest">Add-Ons</div>
+                    <div className="text-sm sm:text-base font-semibold text-green-400">+{fmtHourly(result.addOnsPerHour)}</div>
+                  </div>
+                )}
+                <div className="text-center">
+                  <div className="text-xs text-gray-500 uppercase tracking-widest">Effective</div>
+                  <div className="text-sm sm:text-base font-bold text-white">{fmtHourly(result.effectiveHourly)}/hr</div>
+                </div>
+              </div>
+              <div className="border-l border-gray-800 pl-4 sm:pl-6">
+                <div className="text-xs text-gray-500 uppercase tracking-widest">Total Weekly</div>
+                <div className="text-red-500 font-black text-lg sm:text-xl">{fmt(result.weeklyTotal)}</div>
+                <div className="text-gray-500 text-xs">{fmt(result.annualized)}/yr</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Position selector */}
-        <section className="mb-8">
+        <section className="mb-6 sm:mb-8">
           <label className="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
             Position
           </label>
@@ -175,7 +222,7 @@ export default function CommissionPage() {
             <select
               className="w-full appearance-none bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 pr-10 font-semibold text-sm text-white focus:outline-none focus:border-red-500 cursor-pointer"
               value={position || ''}
-              onChange={e => setPosition(e.target.value as Position)}
+              onChange={e => { setPosition(e.target.value as Position); setWeeklyBilled(''); }}
             >
               <option value="" disabled>Select a position</option>
               {POSITIONS.map(p => (
@@ -189,14 +236,14 @@ export default function CommissionPage() {
         {position && (
           <>
             {/* Role-specific toggles */}
-            <section className="mb-8 space-y-4">
+            <section className="mb-6 sm:mb-8 space-y-3">
               {position === 'mechanic' && (
                 <div className="flex gap-1 p-1 bg-gray-800 rounded-lg w-fit">
                   {([true, false] as const).map(withTools => (
                     <button
                       key={withTools ? 'tools' : 'no-tools'}
                       onClick={() => setMechanicWithTools(withTools)}
-                      className={`px-4 py-2 rounded-md text-xs font-semibold uppercase tracking-widest transition-colors ${
+                      className={`px-3 sm:px-4 py-2 rounded-md text-xs font-semibold uppercase tracking-widest transition-colors ${
                         mechanicWithTools === withTools
                           ? 'bg-red-600 text-white shadow'
                           : 'text-gray-400 hover:text-white'
@@ -213,7 +260,7 @@ export default function CommissionPage() {
                     <button
                       key={isManager ? 'mgr' : 'non-mgr'}
                       onClick={() => setRetailIsManager(isManager)}
-                      className={`px-4 py-2 rounded-md text-xs font-semibold uppercase tracking-widest transition-colors ${
+                      className={`px-3 sm:px-4 py-2 rounded-md text-xs font-semibold uppercase tracking-widest transition-colors ${
                         retailIsManager === isManager
                           ? 'bg-red-600 text-white shadow'
                           : 'text-gray-400 hover:text-white'
@@ -227,13 +274,13 @@ export default function CommissionPage() {
             </section>
 
             {/* Certifications & Add-Ons */}
-            <section className="mb-8 rounded-xl bg-gray-900 border border-gray-800 p-5">
+            <section className="mb-6 sm:mb-8 rounded-xl bg-gray-900 border border-gray-800 p-4 sm:p-5">
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">
                 Certifications & Add-Ons
               </h2>
 
               {/* Number inputs grouped */}
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                 {showVendorCerts && (
                   <CertNumberInput
                     label="ASE / BG / Vendor Certs"
@@ -281,7 +328,7 @@ export default function CommissionPage() {
 
               {/* Checkboxes grouped */}
               <div className="mt-4 pt-4 border-t border-gray-800">
-                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
                   <CertCheckbox
                     label="MSHA"
                     value={addOns.msha}
@@ -324,7 +371,7 @@ export default function CommissionPage() {
 
             {/* Weekly Production (commission roles only) */}
             {hasCommission(position) && (
-              <section className="mb-8">
+              <section className="mb-6 sm:mb-8">
                 <label className="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
                   Weekly Production
                 </label>
@@ -349,13 +396,13 @@ export default function CommissionPage() {
                 </p>
 
                 {/* Tier reference */}
-                <div className="mt-4 rounded-xl bg-gray-900 border border-gray-800 overflow-hidden">
+                <div className="mt-4 rounded-xl bg-gray-900 border border-gray-800 overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-gray-500 border-b border-gray-800">
-                        <th className="text-left py-2 px-4 font-semibold">Production Range</th>
-                        <th className="text-center py-2 font-semibold">Rate</th>
-                        <th className="text-right py-2 font-semibold">Weekly Commission</th>
+                        <th className="text-left py-2 px-3 sm:px-4 font-semibold">Production Range</th>
+                        <th className="text-center py-2 px-2 font-semibold">Rate</th>
+                        <th className="text-right py-2 px-3 sm:px-4 font-semibold">Weekly Commission</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-800/50">
@@ -372,13 +419,13 @@ export default function CommissionPage() {
                             }`}
                             onClick={() => setWeeklyBilled(String(tier.min))}
                           >
-                            <td className={`py-2 px-4 ${inRange ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
+                            <td className={`py-2 px-3 sm:px-4 ${inRange ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
                               {fmt(tier.min)} – {tier.max === Infinity ? '∞' : fmt(tier.max)}
                             </td>
-                            <td className={`py-2 text-center ${inRange ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
+                            <td className={`py-2 px-2 text-center ${inRange ? 'text-red-400 font-bold' : 'text-gray-400'}`}>
                               {(tier.rate * 100).toFixed(1)}%
                             </td>
-                            <td className={`py-2 text-right ${inRange ? 'text-red-400 font-bold' : 'text-gray-600'}`}>
+                            <td className={`py-2 px-3 sm:px-4 text-right ${inRange ? 'text-red-400 font-bold' : 'text-gray-600'}`}>
                               {fmt((tier.min + (tier.max === Infinity ? tier.min : tier.max)) / 2 * tier.rate)}
                             </td>
                           </tr>
@@ -392,7 +439,7 @@ export default function CommissionPage() {
 
             {/* Pay Summary */}
             {result && (
-              <section className="rounded-xl bg-gray-900 border border-red-500/40 p-6">
+              <section className="mb-8 rounded-xl bg-gray-900 border border-red-500/40 p-4 sm:p-6">
                 <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">
                   Pay Offer Summary
                 </h2>
