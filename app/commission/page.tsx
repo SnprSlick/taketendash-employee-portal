@@ -183,8 +183,8 @@ export default function CommissionPage() {
   const { user, loading: authLoading } = useAuth();
 
   const [position, setPosition] = useState<Position | null>(null);
-  const [mechanicWithTools, setMechanicWithTools] = useState(true);
-  const [retailIsManager, setRetailIsManager] = useState(false);
+
+
   const [addOns, setAddOns] = useState<AddOnState>(defaultAddOns);
   const [weeklyBilled, setWeeklyBilled] = useState('');
 
@@ -210,11 +210,11 @@ export default function CommissionPage() {
 
   const result = useMemo(() => {
     if (!position) return null;
-    return calcPay(position, mechanicWithTools, addOns, currentBilled);
-  }, [position, mechanicWithTools, addOns, currentBilled]);
+    return calcPay(position, true, addOns, currentBilled);
+  }, [position, addOns, currentBilled]);
 
   const showForklift = position === 'mechanic' || position === 'service-tech' || position === 'warehouse' || position === 'lube' || position === 'retail';
-  const showSaturday = position === 'mechanic' || position === 'tire-tech' || position === 'service-tech' || position === 'lube' || (position === 'retail' && !retailIsManager);
+  const showSaturday = position === 'mechanic' || position === 'tire-tech' || position === 'service-tech' || position === 'lube' || position === 'retail';
   const showCdl = position === 'service-tech';
   const showAdded = position === 'service-tech';
 
@@ -333,44 +333,7 @@ export default function CommissionPage() {
 
         {position && (
           <>
-            {/* Role-specific toggles */}
-            <section className="mb-6 sm:mb-8 space-y-3">
-              {position === 'mechanic' && (
-                <div className="flex gap-1 p-1 bg-gray-800 rounded-lg w-fit">
-                  {([true, false] as const).map(withTools => (
-                    <button
-                      key={withTools ? 'tools' : 'no-tools'}
-                      onClick={() => setMechanicWithTools(withTools)}
-                      className={`px-3 sm:px-4 py-2 rounded-md text-xs font-semibold uppercase tracking-widest transition-colors ${
-                        mechanicWithTools === withTools
-                          ? 'bg-red-600 text-white shadow'
-                          : 'text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      {withTools ? 'With Tools ($22/hr)' : 'Without Tools ($18/hr)'}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {position === 'retail' && (
-                <div className="flex gap-1 p-1 bg-gray-800 rounded-lg w-fit">
-                  {([false, true] as const).map(isManager => (
-                    <button
-                      key={isManager ? 'mgr' : 'non-mgr'}
-                      onClick={() => setRetailIsManager(isManager)}
-                      className={`px-3 sm:px-4 py-2 rounded-md text-xs font-semibold uppercase tracking-widest transition-colors ${
-                        retailIsManager === isManager
-                          ? 'bg-red-600 text-white shadow'
-                          : 'text-gray-400 hover:text-white'
-                      }`}
-                    >
-                      {isManager ? 'Manager' : 'Non-Manager'}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-
+            
             {/* Certifications & Add-Ons */}
             <section className="mb-6 sm:mb-8 rounded-xl bg-gray-900 border border-gray-800 p-4 sm:p-5">
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-4">
