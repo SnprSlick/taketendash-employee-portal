@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Workflow {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  category    String?
+  isTemplate  Boolean  @default(false)
+  nodes       String   @default("[]")
+  edges       String   @default("[]")
+  notes       String   @default("[]")
+  documents   String   @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  paths       WorkflowPath[]
+  @@map("wf_workflows")
+}
+
+// A saved set of nodes ("path") that can be exported to PDF later.
+model WorkflowPath {
+  id         String   @id @default(cuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  name       String
+  nodeIds    String   @default("[]")
+  // Connections included in the path; null = every connection between its nodes.
+  edgeIds    String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  @@map("wf_paths")
+}
+
+model Role {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  color       String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  groups      RoleGroup[]
+  @@map("wf_roles")
+}
+
+model RoleGroup {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  color       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  roles       Role[]
+  @@map("wf_role_groups")
+}
+
+model Location {
+  id        String   @id @default(cuid())
+  letter    String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  bins      Bin[]
+  @@map("wf_locations")
+}
+
+model Bin {
+  id         String   @id @default(cuid())
+  name       String
+  color      String
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  @@map("wf_bins")
+}

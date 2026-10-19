@@ -8,7 +8,12 @@
 - [x] 1.5 Run dev server, check existing pages for console errors
 
 ## Phase 2: Prisma + Postgres
-- [ ] Not started
+- [x] 2.1 Install prisma/@prisma/client/dotenv, prisma.config.ts (loads .env.local)
+- [x] 2.2 Port schema to postgresql, tables prefixed wf_, isolated in `workflow` pg schema
+- [x] 2.3 Generate init migration offline (additive only, audited)
+- [x] 2.4 DATABASE_URL in gitignored .env.local; placeholder in .env.example
+- [ ] 2.5 Apply migration with `npm run db:deploy` (NEVER migrate dev/reset/db push) - needs Railway public URL or run on Railway
+- [ ] 2.6 Create lib/db (Prisma singleton)
 
 ## Phase 3: Port code (components, lib, API routes, pages, NavBar link, auth)
 - [ ] Not started
