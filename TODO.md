@@ -15,8 +15,13 @@
 - [x] 2.5 Migration applied to Railway (workflow schema, 8 tables; public untouched)
 - [x] 2.6 Create app/lib/db.ts (Prisma singleton `prisma`)
 
-## Phase 3: Port code (components, lib, API routes, pages, NavBar link, auth)
-- [ ] Not started
+## Phase 3 (COMPLETE): Port code
+- [x] 3.1 Copy components -> components/workflow, lib -> lib/workflow, API routes -> app/api, pages -> app/workflows, app/print
+- [x] 3.2 Rewrite import aliases; list page at /workflows
+- [x] 3.3 Auth: proxy.ts validates Bearer token vs backend /auth/profile; wfFetch adds token client-side; /workflows layout gates on login
+- [x] 3.4 NavBar 'Workflows' link, portal layout (h-full inside NavBar shell)
+- [x] 3.5 Verified: build, list/create/canvas/walkthrough, no console errors, PDF export locally
+- [ ] 3.6 Follow-up: verify auth path against real backend token (local backend not running; WORKFLOW_AUTH_DISABLED=1 in .env.local for dev only)
 
 ## Phase 4: Puppeteer/Chromium on Railway
 - [ ] Not started
