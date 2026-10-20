@@ -103,7 +103,11 @@ export async function renderWorkflowPdf({
   notes?: WorkflowNote[];
   roles?: Role[];
 }): Promise<Buffer> {
-  const browser = await puppeteer.launch({ headless: true });
+  const browser = await puppeteer.launch({
+    headless: true,
+    // Container (Railway) has no user namespaces; enabled via the Dockerfile.
+    args: process.env.PUPPETEER_NO_SANDBOX === "1" ? ["--no-sandbox", "--disable-setuid-sandbox"] : [],
+  });
   try {
     const outlineHtml = renderSections(outline, roles);
 

@@ -23,8 +23,11 @@
 - [x] 3.5 Verified: build, list/create/canvas/walkthrough, no console errors, PDF export locally
 - [ ] 3.6 Follow-up: verify auth path against real backend token (local backend not running; WORKFLOW_AUTH_DISABLED=1 in .env.local for dev only)
 
-## Phase 4: Puppeteer/Chromium on Railway
-- [ ] Not started
+## Phase 4 (COMPLETE): Puppeteer/Chromium on Railway
+- [x] 4.1 Production Dockerfile (node:22-slim + chromium, PUPPETEER_EXECUTABLE_PATH, --no-sandbox via PUPPETEER_NO_SANDBOX=1), .dockerignore
+- [x] 4.2 CMD runs `npm run db:deploy` (non-fatal on failure) then `npm start`
+- [x] 4.3 Verified locally in Docker: image builds, Chromium renders PDF, portal starts with unreachable DB, API 401 without token
+- [ ] 4.4 Railway service variables: DATABASE_URL (internal URL + ?schema=workflow), NEXT_PUBLIC_BACKEND_URL (build arg); do NOT set WORKFLOW_AUTH_DISABLED
 
 ## Phase 5: Data migration
 - [ ] Not started
