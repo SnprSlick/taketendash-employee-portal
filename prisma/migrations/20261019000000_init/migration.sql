@@ -1,5 +1,3 @@
-◇ injected env (2) from .env.local // tip: ⌘ override existing { override: true }
-◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
 -- CreateSchema
 
 -- CreateTable
