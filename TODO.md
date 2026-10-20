@@ -29,8 +29,10 @@
 - [x] 4.3 Verified locally in Docker: image builds, Chromium renders PDF, portal starts with unreachable DB, API 401 without token
 - [ ] 4.4 Railway service variables: DATABASE_URL (internal URL + ?schema=workflow), NEXT_PUBLIC_BACKEND_URL (build arg); do NOT set WORKFLOW_AUTH_DISABLED
 
-## Phase 5: Data migration
-- [ ] Not started
+## Phase 5 (COMPLETE): Data migration
+- [x] scripts/import-workflow-builder-sqlite.cjs (insert-only, dry-run default); applied: 6 workflows, 11 paths, 13 roles, 1 group, 4 locations, 13 bins, 2 links; public schema untouched (77 tables)
+- [x] Verified in UI (Work Order: roles, documents, paths) and PDF export
 
-## Phase 6: Docs (merge function reference into CLAUDE.md)
-- [ ] Not started
+## Phase 6 (COMPLETE): Docs
+- [x] CLAUDE.md: portal reference, layout, DB rules, deploy, merged builder function reference + API schema
+- [x] MCP server stays in ../workflow-builder (reads its own SQLite)
